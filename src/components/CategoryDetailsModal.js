@@ -37,7 +37,10 @@ export default function CategoryDetailsModal({
 
   const absoluteTotal = Math.abs(total);
   const limit = limits?.[category];
-  const exceeded = limit && absoluteTotal > limit;
+
+  const isExceeded = limit && absoluteTotal > limit;
+  const isWarning =
+    limit && absoluteTotal >= limit * 0.8 && !isExceeded;
 
   const monthLabel = String(month + 1).padStart(2, "0");
 
@@ -56,20 +59,23 @@ export default function CategoryDetailsModal({
         {limit && (
           <div
             style={{
-              padding: 10,
-              borderRadius: 8,
-              fontWeight: "bold",
-              background: exceeded ? "#ffe0e0" : "#e6f4ea",
-              color: exceeded ? "#a40000" : "#0b6b2e",
+              ...styles.alert,
+              ...(isExceeded
+                ? styles.alertDanger
+                : isWarning
+                ? styles.alertWarning
+                : styles.alertOk),
             }}
           >
-            {exceeded
-              ? `⚠️ Limite ultrapassado: R$ ${absoluteTotal.toFixed(
-                  2
-                )} / R$ ${limit}`
-              : `✔️ Dentro do limite: R$ ${absoluteTotal.toFixed(
-                  2
-                )} / R$ ${limit}`}
+            {isExceeded
+              ? "🚨 Limite estourado"
+              : isWarning
+              ? "⚠️ Atenção: perto do limite"
+              : "✅ Dentro do limite"}
+
+            <div style={styles.alertSub}>
+              R$ {absoluteTotal.toFixed(2)} / R$ {limit.toFixed(2)}
+            </div>
           </div>
         )}
 
@@ -123,6 +129,7 @@ const styles = {
     justifyContent: "center",
     zIndex: 9999,
   },
+
   modal: {
     background: "#fff",
     padding: 20,
@@ -133,11 +140,40 @@ const styles = {
     flexDirection: "column",
     gap: 12,
   },
+
   header: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
   },
+
+  alert: {
+    padding: 10,
+    borderRadius: 8,
+    fontWeight: "bold",
+  },
+
+  alertSub: {
+    fontSize: 13,
+    marginTop: 4,
+    fontWeight: "normal",
+  },
+
+  alertOk: {
+    background: "#e6f7ee",
+    color: "#1b7f4b",
+  },
+
+  alertWarning: {
+    background: "#fff7e6",
+    color: "#9a6b00",
+  },
+
+  alertDanger: {
+    background: "#fdecea",
+    color: "#b00020",
+  },
+
   list: {
     display: "flex",
     flexDirection: "column",
@@ -145,6 +181,7 @@ const styles = {
     maxHeight: 260,
     overflowY: "auto",
   },
+
   item: {
     display: "flex",
     justifyContent: "space-between",
@@ -152,15 +189,18 @@ const styles = {
     borderBottom: "1px solid #eee",
     paddingBottom: 4,
   },
+
   empty: {
     fontSize: 14,
     color: "#777",
   },
+
   total: {
     borderTop: "1px solid #ddd",
     paddingTop: 8,
     fontSize: 15,
   },
+
   close: {
     marginTop: 6,
     background: "#25D366",
