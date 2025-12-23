@@ -24,20 +24,21 @@ import {
 import { signOut } from "firebase/auth";
 
 /* =========================================================
- * 2. UTILS / HELPERS
- * ======================================================= */
-import { calculateMonthlyImpact } from "./utils/calculateMonthlyImpact";
-import { parseInstallment } from "./installmentsParser";
-
-/* =========================================================
  * 3. COMPONENTS
  * ======================================================= */
+import EditExpenseModal from "./components/EditExpenseModal";
+import CategoryModal from "./components/CategoryModal";
+import FiltersModal from "./components/FiltersModal";
 import InstallmentModal from "./InstallmentModal";
 import InstallmentBubble from "./components/InstallmentBubble";
 import CategoryDetailsModal from "./components/CategoryDetailsModal";
 import EmojiPicker from "./components/EmojiPicker";
 
-
+/* =========================================================
+ * 2. UTILS / HELPERS
+ * ======================================================= */
+import { calculateMonthlyImpact } from "./utils/calculateMonthlyImpact";
+import { parseInstallment } from "./installmentsParser";
 /* =========================================================
  * 4. FIREBASE CONFIG
  * ======================================================= */
@@ -62,6 +63,18 @@ const MONTHS = [
   "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro",
 ];
 
+/* =======================================================
+ * 5.1 LIMITES POR CATEGORIA (B3)
+ * ===================================================== */
+const CATEGORY_LIMITS = {
+  Mercado: 800,
+  Aluguel: 1500,
+  Lazer: 400,
+  Transporte: 300,
+  Saúde: 300,
+  Contas: 600,
+  Outros: 300,
+};
 /* =========================================================
  * 6. COMPONENT
  * ======================================================= */
@@ -273,7 +286,7 @@ async function sendEmoji(emoji) {
   );
 
 
-  /* =======================================================
+/* =======================================================
  * 11. UI
  * ===================================================== */
 return (
@@ -328,9 +341,7 @@ return (
             >
               <div>{e.text}</div>
 
-              <strong>
-                R$ {Math.abs(e.amount).toFixed(2)}
-              </strong>
+              <strong>R$ {Math.abs(e.amount).toFixed(2)}</strong>
 
               {e.installments && (
                 <InstallmentBubble expense={e} isMine={isMine} />
@@ -393,109 +404,32 @@ return (
 
     {/* ================= MODAL FILTROS ================= */}
     {showFilters && (
-      <div style={styles.overlay}>
-        <div style={styles.modalCard}>
-          <h3>🔍 Filtros</h3>
-
-          <div style={styles.filterRow}>
-            <button onClick={() => setMonth((m) => (m + 11) % 12)}>◀</button>
-            <strong>{MONTHS[month]}</strong>
-            <button onClick={() => setMonth((m) => (m + 1) % 12)}>▶</button>
-
-            <button onClick={() => setYear((y) => y - 1)}>◀</button>
-            <strong>{year}</strong>
-            <button onClick={() => setYear((y) => y + 1)}>▶</button>
-          </div>
-
-          <button onClick={() => setShowFilters(false)}>
-            Aplicar filtros
-          </button>
-        </div>
-      </div>
+      <FiltersModal
+        month={month}
+        setMonth={setMonth}
+        year={year}
+        setYear={setYear}
+        MONTHS={MONTHS}
+        onClose={() => setShowFilters(false)}
+      />
     )}
 
     {/* ================= MODAL CATEGORIAS ================= */}
     {showCategories && (
-      <div style={styles.overlay}>
-        <div style={styles.modalCard}>
-          <h3>Categorias</h3>
-
-          {categories.map((c) => (
-            <div
-              key={c.id}
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-              }}
-            >
-              <span
-                style={{ fontWeight: "bold", cursor: "pointer" }}
-                onClick={() => {
-                  setSelectedCategory(c.name);
-                  setShowCategoryDetails(true);
-                }}
-              >
-                {c.name}
-              </span>
-
-              <button
-                onClick={async () => {
-                  const used = expenses.some(
-                    (e) => e.category === c.name
-                  );
-
-                  if (
-                    used &&
-                    !window.confirm(
-                      "Essa categoria já foi usada. Deseja excluir mesmo assim?"
-                    )
-                  ) {
-                    return;
-                  }
-
-                  await deleteDoc(
-                    doc(
-                      db,
-                      "families",
-                      FAMILY_ID,
-                      "categories",
-                      c.id
-                    )
-                  );
-                }}
-              >
-                🗑️
-              </button>
-            </div>
-          ))}
-
-          <input
-            placeholder="Nova categoria"
-            value={newCategory}
-            onChange={(e) => setNewCategory(e.target.value)}
-          />
-
-          <button
-            onClick={async () => {
-              if (!newCategory.trim()) return;
-
-              await addDoc(
-                collection(db, "families", FAMILY_ID, "categories"),
-                { name: newCategory.trim() }
-              );
-
-              setNewCategory("");
-            }}
-          >
-            Adicionar
-          </button>
-
-          <button onClick={() => setShowCategories(false)}>
-            Fechar
-          </button>
-        </div>
-      </div>
+      <CategoryModal
+        db={db}
+        FAMILY_ID={FAMILY_ID}
+        categories={categories}
+        expenses={expenses}
+        newCategory={newCategory}
+        setNewCategory={setNewCategory}
+        onClose={() => setShowCategories(false)}
+        onSelectCategory={(category) => {
+          setSelectedCategory(category);
+          setShowCategoryDetails(true);
+          setShowCategories(false);
+        }}
+      />
     )}
 
     {/* ================= MODAL DETALHE DA CATEGORIA ================= */}
@@ -511,93 +445,15 @@ return (
         }}
       />
     )}
-{/* ===== MODAL EDITAR LANÇAMENTO ===== */}
-{editExpense && (
-  <div style={styles.overlay}>
-    <div style={styles.modalCard}>
-      <h3>Editar lançamento</h3>
 
-      <input
-        type="number"
-        value={Math.abs(editExpense.amount)}
-        onChange={(e) => {
-          const v = Number(e.target.value);
-          setEditExpense({
-            ...editExpense,
-            amount:
-              editExpense.amount > 0
-                ? Math.abs(v)
-                : -Math.abs(v),
-          });
-        }}
+    {/* ================= MODAL EDITAR LANÇAMENTO ================= */}
+    {editExpense && (
+      <EditExpenseModal
+        expense={editExpense}
+        FAMILY_ID={FAMILY_ID}
+        onClose={() => setEditExpense(null)}
       />
-
-      <select
-        value={editExpense.category}
-        onChange={(e) =>
-          setEditExpense({
-            ...editExpense,
-            category: e.target.value,
-          })
-        }
-      >
-        {categories.map((c) => (
-          <option key={c.id} value={c.name}>
-            {c.name}
-          </option>
-        ))}
-      </select>
-
-      <button
-        onClick={async () => {
-          await updateDoc(
-            doc(
-              db,
-              "families",
-              FAMILY_ID,
-              "expenses",
-              editExpense.id
-            ),
-            {
-              amount: editExpense.amount,
-              category: editExpense.category,
-            }
-          );
-          setEditExpense(null);
-        }}
-      >
-        Salvar
-      </button>
-
-      <button
-        onClick={async () => {
-          if (
-            window.confirm(
-              "Deseja excluir este lançamento?"
-            )
-          ) {
-            await deleteDoc(
-              doc(
-                db,
-                "families",
-                FAMILY_ID,
-                "expenses",
-                editExpense.id
-              )
-            );
-            setEditExpense(null);
-          }
-        }}
-      >
-        Excluir
-      </button>
-
-      <button onClick={() => setEditExpense(null)}>
-        Cancelar
-      </button>
-    </div>
-  </div>
-)}
+    )}
 
     {/* ================= MODAL PARCELAMENTO ================= */}
     {showInstallmentModal && installmentData && (
@@ -609,8 +465,8 @@ return (
     )}
   </>
 );
-
 }
+
 /* =======================================================
  * 12. STYLES
  * ===================================================== */
@@ -734,3 +590,4 @@ const styles = {
     justifyContent: "center",
   },
 };
+
