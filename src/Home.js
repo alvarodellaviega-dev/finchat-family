@@ -439,6 +439,7 @@ return (
         expenses={expenses}
         month={month}
         year={year}
+limits={CATEGORY_LIMITS}
         onClose={() => {
           setShowCategoryDetails(false);
           setSelectedCategory(null);

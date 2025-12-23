@@ -1,5 +1,5 @@
 // FinChat Family
-// Version: 1.6.1
+// Version: 1.6.2
 // File: CategoryDetailsModal.js
 // Scope: Modal isolado para exibir lançamentos por categoria no mês
 // ⚠️ NÃO acessa Firestore
@@ -13,6 +13,7 @@ export default function CategoryDetailsModal({
   expenses,
   month,
   year,
+  limits,
   onClose,
 }) {
   // Filtra lançamentos da categoria no mês/ano
@@ -34,6 +35,10 @@ export default function CategoryDetailsModal({
     0
   );
 
+  const absoluteTotal = Math.abs(total);
+  const limit = limits?.[category];
+  const exceeded = limit && absoluteTotal > limit;
+
   const monthLabel = String(month + 1).padStart(2, "0");
 
   return (
@@ -46,6 +51,27 @@ export default function CategoryDetailsModal({
             {monthLabel}/{year}
           </span>
         </div>
+
+        {/* ALERTA DE LIMITE */}
+        {limit && (
+          <div
+            style={{
+              padding: 10,
+              borderRadius: 8,
+              fontWeight: "bold",
+              background: exceeded ? "#ffe0e0" : "#e6f4ea",
+              color: exceeded ? "#a40000" : "#0b6b2e",
+            }}
+          >
+            {exceeded
+              ? `⚠️ Limite ultrapassado: R$ ${absoluteTotal.toFixed(
+                  2
+                )} / R$ ${limit}`
+              : `✔️ Dentro do limite: R$ ${absoluteTotal.toFixed(
+                  2
+                )} / R$ ${limit}`}
+          </div>
+        )}
 
         {/* LISTA */}
         <div style={styles.list}>
@@ -72,7 +98,7 @@ export default function CategoryDetailsModal({
         <div style={styles.total}>
           Total do mês:{" "}
           <strong>
-            R$ {Math.abs(total).toFixed(2)}
+            R$ {absoluteTotal.toFixed(2)}
           </strong>
         </div>
 
