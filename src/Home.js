@@ -16,9 +16,6 @@ import {
   orderBy,
   onSnapshot,
   serverTimestamp,
-  doc,
-  updateDoc,
-  deleteDoc,
   getDocs,
 } from "firebase/firestore";
 import { signOut } from "firebase/auth";
@@ -33,12 +30,15 @@ import InstallmentModal from "./InstallmentModal";
 import InstallmentBubble from "./components/InstallmentBubble";
 import CategoryDetailsModal from "./components/CategoryDetailsModal";
 import EmojiPicker from "./components/EmojiPicker";
+import { doc, getDoc } from "firebase/firestore";
+import { ensureUserAndFamily } from "./firebase";
 
 /* =========================================================
  * 2. UTILS / HELPERS
  * ======================================================= */
 import { calculateMonthlyImpact } from "./utils/calculateMonthlyImpact";
 import { parseInstallment } from "./installmentsParser";
+
 /* =========================================================
  * 4. FIREBASE CONFIG
  * ======================================================= */
@@ -59,8 +59,18 @@ const DEFAULT_CATEGORIES = [
 ];
 
 const MONTHS = [
-  "Janeiro","Fevereiro","Março","Abril","Maio","Junho",
-  "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro",
+  "Janeiro",
+  "Fevereiro",
+  "Março",
+  "Abril",
+  "Maio",
+  "Junho",
+  "Julho",
+  "Agosto",
+  "Setembro",
+  "Outubro",
+  "Novembro",
+  "Dezembro",
 ];
 
 /* =======================================================
@@ -75,6 +85,7 @@ const CATEGORY_LIMITS = {
   Contas: 600,
   Outros: 300,
 };
+
 /* =========================================================
  * 6. COMPONENT
  * ======================================================= */
@@ -84,14 +95,16 @@ export default function Home({
   goSettings,
   appVersion,
 }) {
-
   /* -------------------------------------------------------
-   * 6.1 REFS & USER
+   * 6.1 USER & REFS (SEM IF / RETURN AQUI)
    * ----------------------------------------------------- */
   const user = auth.currentUser;
+
   const bottomRef = useRef(null);
   const fileRef = useRef(null);
   const now = new Date();
+  const [activeFamilyId, setActiveFamilyId] = useState(null);
+const [loadingFamily, setLoadingFamily] = useState(true);
 
   /* -------------------------------------------------------
    * 6.2 STATE — CORE
@@ -100,8 +113,7 @@ export default function Home({
   const [expenses, setExpenses] = useState([]);
   const [categories, setCategories] = useState([]);
   const [editExpense, setEditExpense] = useState(null);
-const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
   /* -------------------------------------------------------
    * 6.3 STATE — FILTERS
@@ -126,6 +138,7 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [installmentData, setInstallmentData] = useState(null);
   const [showInstallmentModal, setShowInstallmentModal] = useState(false);
   const [pendingText, setPendingText] = useState("");
+
   /* =======================================================
    * 7. EFFECTS
    * ===================================================== */
@@ -147,6 +160,25 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
       );
     });
   }, []);
+  useEffect(() => {
+  if (!user) return;
+
+  async function loadFamily() {
+    // garante usuário + família
+    await ensureUserAndFamily(user);
+
+    const userRef = doc(db, "users", user.uid);
+    const snap = await getDoc(userRef);
+
+    if (snap.exists()) {
+      setActiveFamilyId(snap.data().activeFamilyId);
+    }
+
+    setLoadingFamily(false);
+  }
+
+  loadFamily();
+}, [user]);
 
   useEffect(() => {
     if (!user) return;
@@ -164,18 +196,79 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     });
   }, [user]);
 
-  /* =======================================================
-   * 8. HELPERS
-   * ===================================================== */
-  function detectCategory(text) {
-    const t = text.toLowerCase();
-    if (t.includes("uber") || t.includes("gasolina")) return "Transporte";
-    if (t.includes("ifood") || t.includes("lanche")) return "Lazer";
-    if (t.includes("mercado")) return "Mercado";
-    if (t.includes("aluguel")) return "Aluguel";
-    if (t.includes("luz") || t.includes("agua")) return "Contas";
-    return "Outros";
-  }
+/* =======================================================
+ * 8. HELPERS
+ * ===================================================== */
+function detectCategory(text) {
+  const t = text.toLowerCase();
+  if (t.includes("uber") || t.includes("gasolina")) return "Transporte";
+  if (t.includes("ifood") || t.includes("lanche")) return "Lazer";
+  if (t.includes("mercado")) return "Mercado";
+  if (t.includes("aluguel")) return "Aluguel";
+  if (t.includes("luz") || t.includes("agua")) return "Contas";
+  return "Outros";
+}
+
+function getCategoryUsage(category) {function getCategoryUsage(expense) {
+  // ⛔ entradas nunca entram em limite
+  if (expense.amount > 0) return null;
+
+  const category = expense.category;
+  const limit = CATEGORY_LIMITS[category];
+  if (!limit) return null;
+
+  const total = expenses
+    .filter((e) => {
+      if (e.amount > 0) return false;
+      if (!e.createdAt) return false;
+      if (e.category !== category) return false;
+
+      const d = e.createdAt.toDate();
+      return d.getMonth() === month && d.getFullYear() === year;
+    })
+    .reduce(
+      (sum, e) =>
+        sum + Math.abs(calculateMonthlyImpact(e, month, year)),
+      0
+    );
+
+  const percent = total / limit;
+
+  return {
+    warning: percent >= 0.8 && percent < 1,
+    exceeded: percent >= 1,
+  };
+}
+
+  const limit = CATEGORY_LIMITS[category];
+  if (!limit) return null;
+
+  const total = expenses
+    .filter((e) => {
+      // ⛔ entradas não contam para limite
+      if (e.amount > 0) return false;
+      if (!e.createdAt) return false;
+      if (e.category !== category) return false;
+
+      const d = e.createdAt.toDate();
+      return d.getMonth() === month && d.getFullYear() === year;
+    })
+    .reduce(
+      (sum, e) =>
+        sum + Math.abs(calculateMonthlyImpact(e, month, year)),
+      0
+    );
+
+  const percent = total / limit;
+
+  return {
+    total,
+    limit,
+    percent,
+    warning: percent >= 0.8 && percent < 1,
+    exceeded: percent >= 1,
+  };
+}
 
 /* =======================================================
  * 9. ACTIONS
@@ -203,7 +296,8 @@ async function saveNormalExpense(rawText) {
   await addDoc(collection(db, "families", FAMILY_ID, "expenses"), {
     text: rawText,
     amount,
-    category: detectCategory(rawText),
+    // 👇 entradas NÃO têm categoria
+    category: isIncome ? null : detectCategory(rawText),
     user: user.email,
     createdAt: serverTimestamp(),
   });
@@ -263,9 +357,6 @@ async function sendEmoji(emoji) {
   setShowEmojiPicker(false);
 }
 
-
-
-
   /* =======================================================
    * 10. FILTERS / CALCULATIONS
    * ===================================================== */
@@ -285,10 +376,13 @@ async function sendEmoji(emoji) {
     0
   );
 
-
 /* =======================================================
  * 11. UI
  * ===================================================== */
+
+if (loadingFamily || !activeFamilyId) {
+  return <div style={{ padding: 20 }}>Carregando família...</div>;
+}
 return (
   <>
     {/* ================= CONTAINER PRINCIPAL ================= */}
@@ -310,54 +404,88 @@ return (
         Saldo: R$ {balance.toFixed(2)} · v{appVersion}
       </div>
 
-      {/* ================= CHAT ================= */}
-      <div style={styles.chat}>
-        {filtered.map((e) => {
-          const isMine = e.user === user.email;
+     {/* ================= CHAT ================= */}
+<div style={styles.chat}>
+  {filtered.map((e) => {
+    const isMine = e.user === user.email;
+    const usage = getCategoryUsage(e);
 
-          if (e.type === "emoji") {
-            return (
-              <div
-                key={e.id}
-                style={{
-                  ...styles.bubble,
-                  ...(isMine ? styles.bubbleMine : styles.bubbleOther),
-                  fontSize: 32,
-                  textAlign: "center",
-                }}
-              >
-                {e.emoji}
-              </div>
-            );
-          }
 
-          return (
-            <div
-              key={e.id}
-              style={{
-                ...styles.bubble,
-                ...(isMine ? styles.bubbleMine : styles.bubbleOther),
-              }}
-            >
-              <div>{e.text}</div>
+    if (e.type === "emoji") {
+      return (
+        <div
+          key={e.id}
+          style={{
+            ...styles.bubble,
+            ...(isMine ? styles.bubbleMine : styles.bubbleOther),
+            fontSize: 32,
+            textAlign: "center",
+          }}
+        >
+          {e.emoji}
+        </div>
+      );
+    }
 
-              <strong>R$ {Math.abs(e.amount).toFixed(2)}</strong>
+    return (
+      <div
+        key={e.id}
+        style={{
+          ...styles.bubble,
+          ...(isMine ? styles.bubbleMine : styles.bubbleOther),
+          border:
+            usage?.exceeded
+              ? "2px solid #d32f2f"
+              : usage?.warning
+              ? "2px solid #f9a825"
+              : "none",
+        }}
+      >
+        {/* Categoria — SOMENTE para SAÍDAS */}
+        {e.amount < 0 && e.category && (
+          <div style={{ fontSize: 12, opacity: 0.7 }}>
+            {e.category}
+          </div>
+        )}
 
-              {e.installments && (
-                <InstallmentBubble expense={e} isMine={isMine} />
-              )}
+        {/* Data — ENTRADAS e SAÍDAS */}
+        {e.createdAt && (
+          <div style={{ fontSize: 11, opacity: 0.5 }}>
+            {e.createdAt.toDate().toLocaleDateString("pt-BR")}
+          </div>
+        )}
 
-              <button
-                style={styles.editButton}
-                onClick={() => setEditExpense(e)}
-              >
-                ✏️
-              </button>
-            </div>
-          );
-        })}
-        <div ref={bottomRef} />
+        <div>{e.text}</div>
+
+        <strong>R$ {Math.abs(e.amount).toFixed(2)}</strong>
+
+        {usage?.warning && (
+          <div style={{ fontSize: 12, color: "#f57f17" }}>
+            ⚠️ 80% do limite de {e.category}
+          </div>
+        )}
+
+        {usage?.exceeded && (
+          <div style={{ fontSize: 12, color: "#b71c1c" }}>
+            🔴 Limite de {e.category} estourado
+          </div>
+        )}
+
+        {e.installments && (
+          <InstallmentBubble expense={e} isMine={isMine} />
+        )}
+
+        <button
+          style={styles.editButton}
+          onClick={() => setEditExpense(e)}
+        >
+          ✏️
+        </button>
       </div>
+    );
+  })}
+  <div ref={bottomRef} />
+</div>
 
       {/* ================= INPUT ================= */}
       <form onSubmit={sendExpense} style={styles.inputBar}>
@@ -367,6 +495,7 @@ return (
         >
           😊
         </span>
+
 
         <span
           style={styles.iconButton}
@@ -403,16 +532,18 @@ return (
     )}
 
     {/* ================= MODAL FILTROS ================= */}
-    {showFilters && (
-      <FiltersModal
-        month={month}
-        setMonth={setMonth}
-        year={year}
-        setYear={setYear}
-        MONTHS={MONTHS}
-        onClose={() => setShowFilters(false)}
-      />
-    )}
+   {showFilters && (
+  <FiltersModal
+    month={month}
+    setMonth={setMonth}
+    year={year}
+    setYear={setYear}
+    MONTHS={MONTHS}
+    typeFilter={typeFilter}
+    setTypeFilter={setTypeFilter}
+    onClose={() => setShowFilters(false)}
+  />
+)}
 
     {/* ================= MODAL CATEGORIAS ================= */}
     {showCategories && (
@@ -439,7 +570,7 @@ return (
         expenses={expenses}
         month={month}
         year={year}
-limits={CATEGORY_LIMITS}
+        limits={CATEGORY_LIMITS}
         onClose={() => {
           setShowCategoryDetails(false);
           setSelectedCategory(null);
@@ -591,4 +722,3 @@ const styles = {
     justifyContent: "center",
   },
 };
-
