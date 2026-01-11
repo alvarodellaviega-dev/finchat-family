@@ -13,7 +13,11 @@ import Installments from "./Installments";
 import Settings from "./Settings";
 import Login from "./Login";
 
-const APP_VERSION = "1.6.2";
+// 🔧 MIGRAÇÃO
+import { migrateExpenses } from "./scripts/migrateExpenses";
+
+const APP_VERSION = "1.6.99-TESTE";
+
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -60,15 +64,45 @@ export default function App() {
     return <Installments goBack={() => setScreen("home")} />;
   }
 
+  // 🟢 HOME (COM BOTÃO DE MIGRAÇÃO)
   return (
-    <Home
-      appVersion={APP_VERSION}
-      language={language}
-      goReport={() => setScreen("report")}
-      goInstallments={() => setScreen("installments")}
-      goSettings={() => setScreen("settings")}
-      setMonth={setMonth}
-      setYear={setYear}
-    />
+    <>
+      {/* 🔧 BOTÃO TEMPORÁRIO DE MIGRAÇÃO */}
+      <div style={{ padding: 10, background: "#fff3e0" }}>
+        <button
+          onClick={async () => {
+            if (
+              !window.confirm(
+                "Isso vai atualizar lançamentos antigos. Deseja continuar?"
+              )
+            )
+              return;
+
+            await migrateExpenses();
+            alert("Migração concluída ✅");
+          }}
+          style={{
+            background: "#ff9800",
+            color: "#fff",
+            padding: 10,
+            borderRadius: 6,
+            width: "100%",
+            fontSize: 16,
+          }}
+        >
+          🔧 Migrar lançamentos antigos
+        </button>
+      </div>
+
+      <Home
+        appVersion={APP_VERSION}
+        language={language}
+        goReport={() => setScreen("report")}
+        goInstallments={() => setScreen("installments")}
+        goSettings={() => setScreen("settings")}
+        setMonth={setMonth}
+        setYear={setYear}
+      />
+    </>
   );
 }

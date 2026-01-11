@@ -8,6 +8,9 @@
  * ======================================================= */
 import { useEffect, useState, useRef } from "react";
 import { auth } from "./firebase";
+import { migrateExpenses } from "./scripts/migrateExpenses";
+
+
 import {
   getFirestore,
   collection,
@@ -19,6 +22,17 @@ import {
   getDocs,
 } from "firebase/firestore";
 import { signOut } from "firebase/auth";
+import AddExpense from "./components/AddExpense";
+
+export default function Home() {
+  return (
+    <div>
+      <h1>FinChat Family</h1>
+
+      <AddExpense />
+    </div>
+  );
+}
 
 /* =========================================================
  * 3. COMPONENTS
@@ -371,7 +385,14 @@ async function sendEmoji(emoji) {
     if (d.getMonth() !== month) return false;
     if (day && d.getDate() !== Number(day)) return false;
     return true;
-  });
+  });if (loadingFamily) {
+  return <div style={{ padding: 20 }}>Carregando família...</div>;
+}
+
+if (!activeFamilyId) {
+  return <div style={{ padding: 20 }}>Nenhuma família ativa</div>;
+}
+
 
   const balance = filtered.reduce((sum, e) => {
   if (typeof e.amount !== "number") return sum;
@@ -413,108 +434,57 @@ return (
         </div>
       </header>
 
+      {/* 🔧 BOTÃO TEMPORÁRIO DE MIGRAÇÃO */}
+      <button
+        onClick={async () => {
+          if (
+            !window.confirm(
+              "Isso vai atualizar lançamentos antigos. Deseja continuar?"
+            )
+          ) return;
+
+          await migrateExpenses();
+        }}
+        style={{
+          margin: "10px 0",
+          background: "#ff9800",
+          color: "#fff",
+          padding: 10,
+          borderRadius: 6,
+        }}
+      >
+        🔧 Migrar lançamentos antigos
+      </button>
+
       <div style={styles.balance}>
         Saldo: R$ {balance.toFixed(2)} · v{appVersion}
       </div>
 
-     {/* ================= CHAT ================= */}
-<div style={styles.chat}>
-  {filtered.map((e, index) => {
-    const isMine = e.user === user.email;
-    const usage = getCategoryUsage(e);
-    const prev = filtered[index - 1];
+      {/* ================= CHAT ================= */}
+      <div style={styles.chat}>
+        {filtered.map((e, index) => {
+          const isMine = e.user === user.email;
+          const usage = getCategoryUsage(e);
+          const prev = filtered[index - 1];
 
-    const showDateSeparator =
-      !prev ||
-      !prev.createdAt ||
-      prev.createdAt.toDate().toDateString() !==
-        e.createdAt.toDate().toDateString();
+          const showDateSeparator =
+            !prev ||
+            !prev.createdAt ||
+            prev.createdAt.toDate().toDateString() !==
+              e.createdAt.toDate().toDateString();
 
-    return (
-      <div
-        key={e.id}
-        style={{
-          display: "flex",
-          flexDirection: "column",
-        }}
-      >
-        {showDateSeparator && e.createdAt && (
-          <div
-            style={{
-              textAlign: "center",
-              fontSize: 12,
-              opacity: 0.5,
-              margin: "12px 0",
-            }}
-          >
-            ─── {e.createdAt.toDate().toLocaleDateString("pt-BR")} ───
-          </div>
-        )}
+          return (
+            <div key={e.id} style={{ display: "flex", flexDirection: "column" }}>
+              {/* … resto do seu código exatamente igual … */}
+            </div>
+          );
+        })}
 
-        {e.type === "emoji" ? (
-          <div
-            style={{
-              ...styles.bubble,
-              ...(isMine ? styles.bubbleMine : styles.bubbleOther),
-              fontSize: 32,
-              textAlign: "center",
-            }}
-          >
-            {e.emoji}
-          </div>
-        ) : (
-          <div
-            style={{
-              ...styles.bubble,
-              ...(isMine ? styles.bubbleMine : styles.bubbleOther),
-              border:
-                usage?.exceeded
-                  ? "2px solid #d32f2f"
-                  : usage?.warning
-                  ? "2px solid #f9a825"
-                  : "none",
-            }}
-          >
-            {/* 💳 Crédito */}
-            {e.paymentMethod === "credit" && (
-              <div style={styles.metaInfo}>💳 Crédito</div>
-            )}
-
-            {/* 💰 Entrada */}
-            {e.amount > 0 && (
-              <div style={styles.metaInfo}>💰 Entrada</div>
-            )}
-
-            {/* Categoria — SOMENTE para SAÍDA */}
-           {e.type === "expense" && e.category && (
-  <div style={styles.metaInfo}>{e.category}</div>
-)}
-
-
-            <div>{e.text}</div>
-
-            <strong>
-              R$ {Math.abs(e.amount).toFixed(2)}
-            </strong>
-
-            {e.installments && (
-              <InstallmentBubble expense={e} isMine={isMine} />
-            )}
-
-            <button
-              style={styles.editButton}
-              onClick={() => setEditExpense(e)}
-            >
-              ✏️
-            </button>
-          </div>
-        )}
+        <div ref={bottomRef} />
       </div>
-    );
-  })}
-
-  <div ref={bottomRef} />
-</div>
+    </div>
+  </>
+);
 
       {/* ================= INPUT ================= */}
       <form onSubmit={sendExpense} style={styles.inputBar}>
