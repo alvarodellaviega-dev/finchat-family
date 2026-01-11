@@ -1,9 +1,9 @@
 // FinChat Family
-// Version: 1.6.3
+// Version: 1.6.4
 // File: Report.js
-// Scope: Leitura rápida + hierarquia visual + UX refinada (SEM alterar lógica)
+// Scope: Relatórios mensais confiáveis (fonte única de verdade)
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { auth } from "./firebase";
 import {
   getFirestore,
@@ -11,6 +11,8 @@ import {
   query,
   orderBy,
   onSnapshot,
+  doc,
+  getDoc,
 } from "firebase/firestore";
 
 import {
@@ -24,6 +26,13 @@ import {
   Cell,
   ResponsiveContainer,
 } from "recharts";
+
+import {
+  buildMonthlyReport,
+  buildYearlyReport,
+  MONTHS,
+  closeMonth,
+} from "./utils";
 
 const db = getFirestore();
 const FAMILY_ID = "finchat-family-main";
@@ -39,8 +48,23 @@ const COLORS = [
 
 export default function Report({ month, year, goBack }) {
   const user = auth.currentUser;
-  const [expenses, setExpenses] = useState([]);
 
+  const [expenses, setExpenses] = useState([]);
+  const [isClosed, setIsClosed] = useState(false);
+
+  /* ================= VERIFICA SE MÊS ESTÁ FECHADO ================= */
+  useEffect(() => {
+    async function checkClosed() {
+      const id = `${year}-${String(month + 1).padStart(2, "0")}`;
+      const ref = doc(db, "families", FAMILY_ID, "closedMonths", id);
+      const snap = await getDoc(ref);
+      setIsClosed(snap.exists());
+    }
+
+    checkClosed();
+  }, [month, year]);
+
+  /* ================= FIRESTORE - DESPESAS ================= */
   useEffect(() => {
     if (!user) return;
 
@@ -49,47 +73,42 @@ export default function Report({ month, year, goBack }) {
       orderBy("createdAt", "asc")
     );
 
-    return onSnapshot(q, (snap) => {
-      setExpenses(
-        snap.docs.map((d) => ({ id: d.id, ...d.data() }))
-      );
+    const unsubscribe = onSnapshot(q, (snap) => {
+      setExpenses(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
     });
+
+    return unsubscribe;
   }, [user]);
 
-  /* ================= FILTRO MÊS ================= */
-  const filtered = expenses.filter((e) => {
-    if (!e.createdAt) return false;
-    const d = e.createdAt.toDate();
-    return d.getMonth() === month && d.getFullYear() === year;
-  });
+  /* ================= RELATÓRIOS ================= */
+  const report = useMemo(
+    () => buildMonthlyReport(expenses, month, year),
+    [expenses, month, year]
+  );
 
-  /* ================= ENTRADAS x SAÍDAS ================= */
-  let incomeTotal = 0;
-  let expenseTotal = 0;
+  const yearly = useMemo(
+    () => buildYearlyReport(expenses, year),
+    [expenses, year]
+  );
 
-  filtered.forEach((e) => {
-    if (e.amount > 0) incomeTotal += e.amount;
-    else expenseTotal += Math.abs(e.amount);
-  });
+  /* 🔒 PROTEÇÃO MOBILE (Safari / iPhone) */
+  if (!report) {
+    return <p style={{ padding: 20 }}>Carregando relatório…</p>;
+  }
 
+  /* ================= CHARTS ================= */
   const incomeExpenseChart = [
-    { name: "Entradas", value: incomeTotal },
-    { name: "Saídas", value: expenseTotal },
-  ];
+    { name: "Entradas", value: Number(report.income || 0) },
+    { name: "Saídas (débito)", value: Number(report.debitExpenses || 0) },
+    { name: "Parcelas", value: Number(report.installments || 0) },
+  ].filter((i) => !isNaN(i.value));
 
-  const totalMonth = incomeTotal - expenseTotal;
+  const categoryChart = Object.entries(report.byCategory || {}).map(
+    ([name, value]) => ({ name, value: Number(value || 0) })
+  );
 
-  /* ================= GASTOS POR CATEGORIA ================= */
-  const byCategory = {};
-  filtered
-    .filter((e) => e.amount < 0)
-    .forEach((e) => {
-      byCategory[e.category] =
-        (byCategory[e.category] || 0) + Math.abs(e.amount);
-    });
-
-  const categoryChart = Object.entries(byCategory).map(
-    ([name, value]) => ({ name, value })
+  const paymentChart = Object.entries(report.byPayment || {}).map(
+    ([name, value]) => ({ name, value: Number(value || 0) })
   );
 
   const biggestCategory = categoryChart.reduce(
@@ -98,30 +117,23 @@ export default function Report({ month, year, goBack }) {
   );
 
   const categoryPercent =
-    expenseTotal > 0
-      ? Math.round((biggestCategory.value / expenseTotal) * 100)
+    report.debitExpenses > 0
+      ? Math.round(
+          (biggestCategory.value / report.debitExpenses) * 100
+        )
       : 0;
-
-  /* ================= FORMA DE PAGAMENTO ================= */
-  const byPayment = {};
-  filtered.forEach((e) => {
-    const key =
-      e.paymentType === "credito" ? "Crédito" : "À vista";
-    byPayment[key] = (byPayment[key] || 0) + Math.abs(e.amount);
-  });
-
-  const paymentChart = Object.entries(byPayment).map(
-    ([name, value]) => ({ name, value })
-  );
 
   /* ================= TOOLTIP ================= */
   function CustomTooltip({ active, payload, label }) {
     if (!active || !payload || !payload.length) return null;
+if (!expenses.length) {
+  return <p style={{ padding: 20 }}>Carregando dados…</p>;
+}
 
     return (
       <div style={styles.tooltip}>
         <strong>{label}</strong>
-        <div>R$ {payload[0].value.toFixed(2)}</div>
+        <div>R$ {Number(payload[0].value || 0).toFixed(2)}</div>
       </div>
     );
   }
@@ -139,14 +151,37 @@ export default function Report({ month, year, goBack }) {
         <div
           style={{
             ...styles.monthBalance,
-            color: totalMonth >= 0 ? "#2e7d32" : "#c62828",
+            color:
+              Number(report.balance || 0) >= 0 ? "#2e7d32" : "#c62828",
           }}
         >
-          R$ {totalMonth.toFixed(2)}
+          R$ {Number(report.balance || 0).toFixed(2)}
         </div>
-        <span style={styles.balanceLabel}>
-          saldo do mês
-        </span>
+
+        <span style={styles.balanceLabel}>saldo real do mês</span>
+
+        {/* 🔒 FECHAMENTO DO MÊS */}
+        {!isClosed ? (
+          <button
+            onClick={async () => {
+              await closeMonth({
+                familyId: FAMILY_ID,
+                month,
+                year,
+                report,
+              });
+              setIsClosed(true);
+              alert("Mês fechado com sucesso ✅");
+            }}
+            style={{ marginTop: 10 }}
+          >
+            🔒 Fechar mês
+          </button>
+        ) : (
+          <p style={{ color: "#2e7d32", marginTop: 10 }}>
+            🔐 Este mês já está fechado
+          </p>
+        )}
       </div>
 
       {/* ===== ENTRADAS x SAÍDAS ===== */}
@@ -161,12 +196,6 @@ export default function Report({ month, year, goBack }) {
             <Bar dataKey="value" />
           </BarChart>
         </ResponsiveContainer>
-
-        <p style={styles.insight}>
-          {incomeTotal >= expenseTotal
-            ? "✅ Você gastou menos do que ganhou."
-            : "⚠️ Gastos maiores que as entradas neste mês."}
-        </p>
       </section>
 
       {/* ===== GASTOS POR CATEGORIA ===== */}
@@ -174,7 +203,7 @@ export default function Report({ month, year, goBack }) {
         <h3>🥧 Gastos por categoria</h3>
 
         {categoryChart.length === 0 ? (
-          <p>Nenhuma saída registrada.</p>
+          <p>Nenhuma saída no débito neste mês.</p>
         ) : (
           <>
             <ResponsiveContainer width="100%" height={240}>
@@ -187,10 +216,7 @@ export default function Report({ month, year, goBack }) {
                   label
                 >
                   {categoryChart.map((_, i) => (
-                    <Cell
-                      key={i}
-                      fill={COLORS[i % COLORS.length]}
-                    />
+                    <Cell key={i} fill={COLORS[i % COLORS.length]} />
                   ))}
                 </Pie>
                 <Tooltip content={<CustomTooltip />} />
@@ -199,7 +225,7 @@ export default function Report({ month, year, goBack }) {
 
             <p style={styles.insight}>
               🧾 <strong>{biggestCategory.name}</strong> concentra{" "}
-              <strong>{categoryPercent}%</strong> dos gastos.
+              <strong>{categoryPercent}%</strong> das saídas no débito.
             </p>
           </>
         )}
@@ -219,19 +245,12 @@ export default function Report({ month, year, goBack }) {
               label
             >
               {paymentChart.map((_, i) => (
-                <Cell
-                  key={i}
-                  fill={COLORS[i % COLORS.length]}
-                />
+                <Cell key={i} fill={COLORS[i % COLORS.length]} />
               ))}
             </Pie>
             <Tooltip content={<CustomTooltip />} />
           </PieChart>
         </ResponsiveContainer>
-
-        <p style={styles.insight}>
-          💡 Crédito exige atenção para evitar parcelas acumuladas.
-        </p>
       </section>
     </div>
   );
@@ -240,24 +259,11 @@ export default function Report({ month, year, goBack }) {
 /* ================= ESTILOS ================= */
 
 const styles = {
-  container: {
-    padding: 20,
-  },
-  header: {
-    marginTop: 10,
-    marginBottom: 20,
-  },
-  monthBalance: {
-    fontSize: 28,
-    fontWeight: "bold",
-  },
-  balanceLabel: {
-    fontSize: 13,
-    opacity: 0.7,
-  },
-  section: {
-    marginTop: 30,
-  },
+  container: { padding: 20 },
+  header: { marginTop: 10, marginBottom: 20 },
+  monthBalance: { fontSize: 28, fontWeight: "bold" },
+  balanceLabel: { fontSize: 13, opacity: 0.7 },
+  section: { marginTop: 30 },
   insight: {
     marginTop: 10,
     fontSize: 14,

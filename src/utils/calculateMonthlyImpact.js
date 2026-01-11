@@ -1,69 +1,44 @@
-// FinChat Family
-// File: calculateMonthlyImpact.js
-// Scope: Cálculo isolado do impacto mensal de um lançamento
-// ⚠️ NÃO acessa Firestore
-// ⚠️ NÃO depende de React
-// ⚠️ NÃO altera estado
-// ⚠️ NÃO altera UI
-
-/**
- * Calcula quanto um lançamento impacta um mês/ano específico
- *
- * @param {object} expense - Documento do Firestore
- * @param {number} month - mês alvo (0-11)
- * @param {number} year - ano alvo (YYYY)
- *
- * @returns {number} valor a ser somado ao saldo do mês
- */
 export function calculateMonthlyImpact(expense, month, year) {
-  if (!expense) return 0;
+  if (!expense || !expense.createdAt) return 0;
 
-  // ======================
-  // 💳 PARCELAMENTO
-  // ======================
+  const d = expense.createdAt.toDate();
+  if (d.getMonth() !== month || d.getFullYear() !== year)
+    return 0;
+
+  // 💰 ENTRADA
+  if (expense.type === "income") {
+    return Math.abs(expense.amount);
+  }
+
+  // 💳 CRÉDITO PARCELADO → impacto só nas parcelas
   if (
+    expense.paymentMethod === "credit" &&
     expense.installments &&
-    expense.installments.total > 1 &&
-    expense.installments.startMonth != null &&
-    expense.installments.startYear != null
+    expense.installments.total > 1
   ) {
-    const {
-      startMonth,
-      startYear,
-      total,
-      value,
-    } = expense.installments;
+    const { startMonth, startYear, total, value } =
+      expense.installments;
 
-    const startIndex =
-      startYear * 12 + startMonth;
-    const targetIndex =
-      year * 12 + month;
+    const startIndex = startYear * 12 + startMonth;
+    const targetIndex = year * 12 + month;
+    const current = targetIndex - startIndex + 1;
 
-    const current =
-      targetIndex - startIndex + 1;
+    if (current < 1 || current > total) return 0;
 
-    // ❌ fora do intervalo
-    if (current < 1 || current > total) {
-      return 0;
-    }
-
-    // ✅ parcela válida do mês
     return -Math.abs(value);
   }
 
-  // ======================
-  // 💸 GASTO / 💰 ENTRADA NORMAL
-  // ======================
-  if (typeof expense.amount === "number") {
-    if (!expense.createdAt) return 0;
+  // 💳 CRÉDITO À VISTA → SAÍDA DO MÊS
+  if (
+    expense.paymentMethod === "credit" &&
+    !expense.installments
+  ) {
+    return -Math.abs(expense.amount);
+  }
 
-    const d = expense.createdAt.toDate();
-    if (
-      d.getMonth() === month &&
-      d.getFullYear() === year
-    ) {
-      return expense.amount;
-    }
+  // 💸 DÉBITO → SAÍDA DO MÊS
+  if (expense.paymentMethod === "debit") {
+    return -Math.abs(expense.amount);
   }
 
   return 0;

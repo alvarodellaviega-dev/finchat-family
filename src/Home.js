@@ -209,9 +209,12 @@ function detectCategory(text) {
   return "Outros";
 }
 
-function getCategoryUsage(category) {function getCategoryUsage(expense) {
-  // ⛔ entradas nunca entram em limite
-  if (expense.amount > 0) return null;
+function getCategoryUsage(expense) {
+  if (
+    expense.type !== "expense" ||
+    expense.paymentMethod !== "debit"
+  )
+    return null;
 
   const category = expense.category;
   const limit = CATEGORY_LIMITS[category];
@@ -219,18 +222,33 @@ function getCategoryUsage(category) {function getCategoryUsage(expense) {
 
   const total = expenses
     .filter((e) => {
-      if (e.amount > 0) return false;
+      if (
+        e.type !== "expense" ||
+        e.paymentMethod !== "debit"
+      )
+        return false;
       if (!e.createdAt) return false;
-      if (e.category !== category) return false;
+      const items = expenses.filter((e) => {
+  if (e.type !== "expense") return false;
+  if (!e.category) return false;
+  if (e.category !== category) return false;
+  if (!e.createdAt) return false;
+
+  const d = e.createdAt.toDate();
+  return (
+    d.getMonth() === month &&
+    d.getFullYear() === year
+  );
+});
+
 
       const d = e.createdAt.toDate();
-      return d.getMonth() === month && d.getFullYear() === year;
+      return (
+        d.getMonth() === month &&
+        d.getFullYear() === year
+      );
     })
-    .reduce(
-      (sum, e) =>
-        sum + Math.abs(calculateMonthlyImpact(e, month, year)),
-      0
-    );
+    .reduce((sum, e) => sum + e.amount, 0);
 
   const percent = total / limit;
 
@@ -240,35 +258,6 @@ function getCategoryUsage(category) {function getCategoryUsage(expense) {
   };
 }
 
-  const limit = CATEGORY_LIMITS[category];
-  if (!limit) return null;
-
-  const total = expenses
-    .filter((e) => {
-      // ⛔ entradas não contam para limite
-      if (e.amount > 0) return false;
-      if (!e.createdAt) return false;
-      if (e.category !== category) return false;
-
-      const d = e.createdAt.toDate();
-      return d.getMonth() === month && d.getFullYear() === year;
-    })
-    .reduce(
-      (sum, e) =>
-        sum + Math.abs(calculateMonthlyImpact(e, month, year)),
-      0
-    );
-
-  const percent = total / limit;
-
-  return {
-    total,
-    limit,
-    percent,
-    warning: percent >= 0.8 && percent < 1,
-    exceeded: percent >= 1,
-  };
-}
 
 /* =======================================================
  * 9. ACTIONS
@@ -278,7 +267,7 @@ async function saveNormalExpense(rawText) {
   const match = rawText.match(/(\d+([.,]\d+)?)/);
   if (!match) return;
 
-  let amount = Number(match[1].replace(",", "."));
+  const value = Number(match[1].replace(",", "."));
   const lower = rawText.toLowerCase();
 
   const isIncome = [
@@ -291,17 +280,30 @@ async function saveNormalExpense(rawText) {
     "+",
   ].some((w) => lower.includes(w));
 
-  amount = isIncome ? Math.abs(amount) : -Math.abs(amount);
+  const isCredit = lower.includes("credito");
 
-  await addDoc(collection(db, "families", FAMILY_ID, "expenses"), {
+  const expense = {
     text: rawText,
-    amount,
-    // 👇 entradas NÃO têm categoria
+    amount: value, // 👈 SEMPRE positivo
+    type: isIncome ? "income" : "expense",
+    paymentMethod: isIncome
+      ? null
+      : isCredit
+      ? "credit"
+      : "debit",
     category: isIncome ? null : detectCategory(rawText),
-    user: user.email,
+    creditCardId: isCredit ? "default" : null,
     createdAt: serverTimestamp(),
-  });
+    user: user.email,
+  };
+
+  await addDoc(
+    collection(db, "families", FAMILY_ID, "expenses"),
+    expense
+  );
 }
+
+
 
 async function sendExpense(e) {
   e.preventDefault();
@@ -371,10 +373,21 @@ async function sendEmoji(emoji) {
     return true;
   });
 
-  const balance = filtered.reduce(
-    (sum, e) => sum + calculateMonthlyImpact(e, month, year),
-    0
-  );
+  const balance = filtered.reduce((sum, e) => {
+  if (typeof e.amount !== "number") return sum;
+  if (!e.type) return sum;
+
+  // crédito não afeta saldo imediato
+  if (e.type === "expense" && e.paymentMethod === "credit")
+    return sum;
+
+  return e.type === "income"
+    ? sum + e.amount
+    : sum + e.amount;
+}, 0);
+
+
+
 
 /* =======================================================
  * 11. UI
@@ -383,9 +396,9 @@ async function sendEmoji(emoji) {
 if (loadingFamily || !activeFamilyId) {
   return <div style={{ padding: 20 }}>Carregando família...</div>;
 }
+
 return (
   <>
-    {/* ================= CONTAINER PRINCIPAL ================= */}
     <div style={styles.container}>
       <header style={styles.header}>
         <strong>FinChat Family</strong>
@@ -406,84 +419,100 @@ return (
 
      {/* ================= CHAT ================= */}
 <div style={styles.chat}>
-  {filtered.map((e) => {
+  {filtered.map((e, index) => {
     const isMine = e.user === user.email;
     const usage = getCategoryUsage(e);
+    const prev = filtered[index - 1];
 
-
-    if (e.type === "emoji") {
-      return (
-        <div
-          key={e.id}
-          style={{
-            ...styles.bubble,
-            ...(isMine ? styles.bubbleMine : styles.bubbleOther),
-            fontSize: 32,
-            textAlign: "center",
-          }}
-        >
-          {e.emoji}
-        </div>
-      );
-    }
+    const showDateSeparator =
+      !prev ||
+      !prev.createdAt ||
+      prev.createdAt.toDate().toDateString() !==
+        e.createdAt.toDate().toDateString();
 
     return (
       <div
         key={e.id}
         style={{
-          ...styles.bubble,
-          ...(isMine ? styles.bubbleMine : styles.bubbleOther),
-          border:
-            usage?.exceeded
-              ? "2px solid #d32f2f"
-              : usage?.warning
-              ? "2px solid #f9a825"
-              : "none",
+          display: "flex",
+          flexDirection: "column",
         }}
       >
-        {/* Categoria — SOMENTE para SAÍDAS */}
-        {e.amount < 0 && e.category && (
-          <div style={{ fontSize: 12, opacity: 0.7 }}>
-            {e.category}
+        {showDateSeparator && e.createdAt && (
+          <div
+            style={{
+              textAlign: "center",
+              fontSize: 12,
+              opacity: 0.5,
+              margin: "12px 0",
+            }}
+          >
+            ─── {e.createdAt.toDate().toLocaleDateString("pt-BR")} ───
           </div>
         )}
 
-        {/* Data — ENTRADAS e SAÍDAS */}
-        {e.createdAt && (
-          <div style={{ fontSize: 11, opacity: 0.5 }}>
-            {e.createdAt.toDate().toLocaleDateString("pt-BR")}
+        {e.type === "emoji" ? (
+          <div
+            style={{
+              ...styles.bubble,
+              ...(isMine ? styles.bubbleMine : styles.bubbleOther),
+              fontSize: 32,
+              textAlign: "center",
+            }}
+          >
+            {e.emoji}
+          </div>
+        ) : (
+          <div
+            style={{
+              ...styles.bubble,
+              ...(isMine ? styles.bubbleMine : styles.bubbleOther),
+              border:
+                usage?.exceeded
+                  ? "2px solid #d32f2f"
+                  : usage?.warning
+                  ? "2px solid #f9a825"
+                  : "none",
+            }}
+          >
+            {/* 💳 Crédito */}
+            {e.paymentMethod === "credit" && (
+              <div style={styles.metaInfo}>💳 Crédito</div>
+            )}
+
+            {/* 💰 Entrada */}
+            {e.amount > 0 && (
+              <div style={styles.metaInfo}>💰 Entrada</div>
+            )}
+
+            {/* Categoria — SOMENTE para SAÍDA */}
+           {e.type === "expense" && e.category && (
+  <div style={styles.metaInfo}>{e.category}</div>
+)}
+
+
+            <div>{e.text}</div>
+
+            <strong>
+              R$ {Math.abs(e.amount).toFixed(2)}
+            </strong>
+
+            {e.installments && (
+              <InstallmentBubble expense={e} isMine={isMine} />
+            )}
+
+            <button
+              style={styles.editButton}
+              onClick={() => setEditExpense(e)}
+            >
+              ✏️
+            </button>
           </div>
         )}
-
-        <div>{e.text}</div>
-
-        <strong>R$ {Math.abs(e.amount).toFixed(2)}</strong>
-
-        {usage?.warning && (
-          <div style={{ fontSize: 12, color: "#f57f17" }}>
-            ⚠️ 80% do limite de {e.category}
-          </div>
-        )}
-
-        {usage?.exceeded && (
-          <div style={{ fontSize: 12, color: "#b71c1c" }}>
-            🔴 Limite de {e.category} estourado
-          </div>
-        )}
-
-        {e.installments && (
-          <InstallmentBubble expense={e} isMine={isMine} />
-        )}
-
-        <button
-          style={styles.editButton}
-          onClick={() => setEditExpense(e)}
-        >
-          ✏️
-        </button>
       </div>
     );
   })}
+
   <div ref={bottomRef} />
 </div>
 
@@ -495,16 +524,6 @@ return (
         >
           😊
         </span>
-
-
-        <span
-          style={styles.iconButton}
-          onClick={() => fileRef.current.click()}
-        >
-          📷
-        </span>
-
-        <input ref={fileRef} type="file" hidden />
 
         <input
           style={styles.textInput}
@@ -523,7 +542,6 @@ return (
       </form>
     </div>
 
-    {/* ================= EMOJI PICKER ================= */}
     {showEmojiPicker && (
       <EmojiPicker
         onSelect={sendEmoji}
@@ -531,21 +549,19 @@ return (
       />
     )}
 
-    {/* ================= MODAL FILTROS ================= */}
-   {showFilters && (
-  <FiltersModal
-    month={month}
-    setMonth={setMonth}
-    year={year}
-    setYear={setYear}
-    MONTHS={MONTHS}
-    typeFilter={typeFilter}
-    setTypeFilter={setTypeFilter}
-    onClose={() => setShowFilters(false)}
-  />
-)}
+    {showFilters && (
+      <FiltersModal
+        month={month}
+        setMonth={setMonth}
+        year={year}
+        setYear={setYear}
+        MONTHS={MONTHS}
+        typeFilter={typeFilter}
+        setTypeFilter={setTypeFilter}
+        onClose={() => setShowFilters(false)}
+      />
+    )}
 
-    {/* ================= MODAL CATEGORIAS ================= */}
     {showCategories && (
       <CategoryModal
         db={db}
@@ -562,32 +578,30 @@ return (
         }}
       />
     )}
+{showCategoryDetails && selectedCategory && (
+  <CategoryDetailsModal
+    category={selectedCategory}
+    expenses={expenses}
+    month={month}
+    year={year}
+    limits={CATEGORY_LIMITS}
+    onClose={() => {
+      setShowCategoryDetails(false);
+      setSelectedCategory(null);
+    }}
+  />
+)}
 
-    {/* ================= MODAL DETALHE DA CATEGORIA ================= */}
-    {showCategoryDetails && selectedCategory && (
-      <CategoryDetailsModal
-        category={selectedCategory}
-        expenses={expenses}
-        month={month}
-        year={year}
-        limits={CATEGORY_LIMITS}
-        onClose={() => {
-          setShowCategoryDetails(false);
-          setSelectedCategory(null);
-        }}
-      />
-    )}
+   {editExpense && (
+  <EditExpenseModal
+    expense={editExpense}
+    FAMILY_ID={FAMILY_ID}
+    categories={categories}
+    onClose={() => setEditExpense(null)}
+  />
+)}
 
-    {/* ================= MODAL EDITAR LANÇAMENTO ================= */}
-    {editExpense && (
-      <EditExpenseModal
-        expense={editExpense}
-        FAMILY_ID={FAMILY_ID}
-        onClose={() => setEditExpense(null)}
-      />
-    )}
 
-    {/* ================= MODAL PARCELAMENTO ================= */}
     {showInstallmentModal && installmentData && (
       <InstallmentModal
         data={installmentData}
@@ -596,8 +610,7 @@ return (
       />
     )}
   </>
-);
-}
+);}//
 
 /* =======================================================
  * 12. STYLES
@@ -637,20 +650,29 @@ const styles = {
   },
 
   bubble: {
-    maxWidth: "75%",
-    padding: 10,
-    borderRadius: 14,
+    maxWidth: "70%",
+    padding: "8px 12px",
+    borderRadius: 16,
     position: "relative",
+    wordBreak: "break-word",
   },
 
   bubbleMine: {
     alignSelf: "flex-end",
     background: "#DCF8C6",
+    borderBottomRightRadius: 4,
   },
 
   bubbleOther: {
     alignSelf: "flex-start",
-    background: "#fff",
+    background: "#FFFFFF",
+    borderBottomLeftRadius: 4,
+  },
+
+  metaInfo: {
+    fontSize: 12,
+    opacity: 0.6,
+    marginBottom: 4,
   },
 
   editButton: {
@@ -692,33 +714,5 @@ const styles = {
     width: 40,
     height: 40,
     cursor: "pointer",
-  },
-
-  overlay: {
-    position: "fixed",
-    inset: 0,
-    background: "rgba(0,0,0,0.4)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 9999,
-  },
-
-  modalCard: {
-    background: "#fff",
-    padding: 20,
-    borderRadius: 12,
-    width: "90%",
-    maxWidth: 420,
-    display: "flex",
-    flexDirection: "column",
-    gap: 10,
-  },
-
-  filterRow: {
-    display: "flex",
-    alignItems: "center",
-    gap: 6,
-    justifyContent: "center",
-  },
+  }
 };

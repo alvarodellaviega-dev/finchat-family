@@ -16,22 +16,22 @@ export default function CategoryDetailsModal({
   limits,
   onClose,
 }) {
-  // Filtra lançamentos da categoria no mês/ano
-  const items = expenses.filter((e) => {
-    if (!e.createdAt) return false;
-    if (e.category !== category) return false;
+  // 🔒 Regra oficial:
+  // - Apenas SAÍDAS
+  // - Apenas categoria selecionada
+  // - Apenas mês/ano atual
+ const items = expenses.filter((e) => {
+  if (!e.createdAt) return false;
+  if (!e.category) return false;
+  if (e.category !== category) return false;
 
-    const d = e.createdAt.toDate();
-    if (d.getMonth() !== month) return false;
-    if (d.getFullYear() !== year) return false;
+  const d = e.createdAt.toDate();
+  return d.getMonth() === month && d.getFullYear() === year;
+});
 
-    return true;
-  });
 
-  // Total com impacto mensal (parcelamentos seguros)
   const total = items.reduce(
-    (sum, e) =>
-      sum + calculateMonthlyImpact(e, month, year),
+    (sum, e) => sum + calculateMonthlyImpact(e, month, year),
     0
   );
 
@@ -55,7 +55,7 @@ export default function CategoryDetailsModal({
           </span>
         </div>
 
-        {/* ALERTA DE LIMITE */}
+        {/* ALERTA */}
         {limit && (
           <div
             style={{
@@ -108,7 +108,6 @@ export default function CategoryDetailsModal({
           </strong>
         </div>
 
-        {/* AÇÕES */}
         <button style={styles.close} onClick={onClose}>
           Fechar
         </button>
