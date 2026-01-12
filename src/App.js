@@ -12,6 +12,7 @@ import Report from "./Report";
 import Installments from "./Installments";
 import Settings from "./Settings";
 import Login from "./Login";
+import CardsSettings from "./screens/CardsSettings";
 
 const APP_VERSION = "1.6.2";
 
@@ -19,7 +20,6 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [screen, setScreen] = useState("home");
 
-  // 🌍 idioma global
   const [language, setLanguage] = useState(
     localStorage.getItem("language") || "pt"
   );
@@ -42,6 +42,15 @@ export default function App() {
       <Settings
         goBack={() => setScreen("home")}
         setGlobalLanguage={setLanguage}
+        goCards={() => setScreen("cards")} // 👈 AQUI
+      />
+    );
+  }
+
+  if (screen === "cards") {
+    return (
+      <CardsSettings
+        goBack={() => setScreen("settings")}
       />
     );
   }
@@ -60,7 +69,6 @@ export default function App() {
     return <Installments goBack={() => setScreen("home")} />;
   }
 
-  // 🟢 HOME (BASE ESTÁVEL — SEM MIGRAÇÃO)
   return (
     <Home
       appVersion={APP_VERSION}

@@ -19,7 +19,11 @@ import {
 const db = getFirestore();
 const FAMILY_ID = "finchat-family-main";
 
-export default function Settings({ goBack, setGlobalLanguage }) {
+export default function Settings({
+  goBack,
+  setGlobalLanguage,
+  goCards, // 👈 ADICIONADO
+}) {
   const user = auth.currentUser;
 
   const [language, setLanguage] = useState(
@@ -78,7 +82,13 @@ export default function Settings({ goBack, setGlobalLanguage }) {
 
   return (
     <div style={{ padding: 20 }}>
-      <header style={{ display: "flex", justifyContent: "space-between" }}>
+      <header
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}
+      >
         <strong>Configurações</strong>
         <button onClick={goBack}>⬅ Voltar</button>
       </header>
@@ -97,6 +107,26 @@ export default function Settings({ goBack, setGlobalLanguage }) {
           <option value="en">English</option>
           <option value="es">Español</option>
         </select>
+      </section>
+
+      {/* 👇 NOVA SEÇÃO */}
+      <section style={{ marginTop: 30 }}>
+        <h3>Cartões</h3>
+
+        <button
+          onClick={goCards}
+          style={{
+            padding: 10,
+            width: "100%",
+            fontSize: 16,
+            borderRadius: 8,
+            background: "#1976d2",
+            color: "#fff",
+            border: "none",
+          }}
+        >
+          💳 Gerenciar cartões
+        </button>
       </section>
 
       <section style={{ marginTop: 30 }}>

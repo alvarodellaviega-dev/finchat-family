@@ -31,6 +31,7 @@ import { parseInstallment } from "./installmentsParser";
 const db = getFirestore();
 const FAMILY_ID = "finchat-family-main";
 
+
 const MONTHS = [
   "Janeiro","Fevereiro","Março","Abril","Maio","Junho",
   "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro",
@@ -76,6 +77,9 @@ export default function Home({ goReport, goInstallments, goSettings }) {
   const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
   const [typeFilter, setTypeFilter] = useState("all");
+  const [paymentMethod, setPaymentMethod] = useState("cash");
+// "cash" | "debit" | "credit"
+const [selectedCardId, setSelectedCardId] = useState(null);
 
   /* ================= FIRESTORE ================= */
 
@@ -128,68 +132,81 @@ export default function Home({ goReport, goInstallments, goSettings }) {
 
   /* ================= ACTIONS ================= */
 
-  async function saveExpense(rawText) {
-    const match = rawText.match(/(\d+([.,]\d+)?)/);
-    if (!match) return;
+async function saveExpense(rawText) {
+  const match = rawText.match(/(\d+([.,]\d+)?)/);
+  if (!match) return;
 
-    const value = Number(match[1].replace(",", "."));
-    const lower = rawText.toLowerCase();
+  const value = Number(match[1].replace(",", "."));
+  const lower = rawText.toLowerCase();
 
-    const isIncome = ["recebi","ganhei","pix","salário","salario"]
-      .some((w) => lower.includes(w));
+  const isIncome = ["recebi", "ganhei", "pix", "salário", "salario"]
+    .some((w) => lower.includes(w));
 
-    await addDoc(collection(db, "families", FAMILY_ID, "expenses"), {
-      text: rawText.trim(),
-      amount: isIncome ? Math.abs(value) : -Math.abs(value),
-      type: isIncome ? "income" : "expense",
-      category: isIncome ? null : "Outros",
-      createdAt: serverTimestamp(),
-      user: user.email,
-    });
-  }
+  await addDoc(collection(db, "families", FAMILY_ID, "expenses"), {
+    text: rawText.trim(),
+    amount: isIncome ? Math.abs(value) : -Math.abs(value),
+    type: isIncome ? "income" : "expense",
+    category: isIncome ? null : "Outros",
 
-  async function sendExpense(e) {
-    e.preventDefault();
-    if (!text.trim()) return;
+    // 🔐 NOVO PADRÃO
+    paymentMethod,
+    cardId:
+      paymentMethod === "debit" || paymentMethod === "credit"
+        ? selectedCardId
+        : null,
 
-    const parsed = parseInstallment(text);
-    if (parsed) {
-      setPendingText(text);
-      setInstallmentData(parsed);
-      setShowInstallmentModal(true);
-      setText("");
-      return;
-    }
+    createdAt: serverTimestamp(),
+    user: user.email,
+  });
+}
 
-    await saveExpense(text);
+async function sendExpense(e) {
+  e.preventDefault();
+  if (!text.trim()) return;
+
+  const parsed = parseInstallment(text);
+  if (parsed) {
+    setPendingText(text);
+    setInstallmentData(parsed);
+    setShowInstallmentModal(true);
     setText("");
+    return;
   }
 
-  async function confirmInstallment(extraData) {
-    await addDoc(collection(db, "families", FAMILY_ID, "expenses"), {
-      text: pendingText,
-      amount: -extraData.installments.total * extraData.installments.value,
-      type: "expense",
-      category: "Outros",
-      installments: extraData.installments,
-      createdAt: serverTimestamp(),
-      user: user.email,
-    });
+  await saveExpense(text);
+  setText("");
+}
 
-    setShowInstallmentModal(false);
-    setInstallmentData(null);
-    setPendingText("");
-  }
+async function confirmInstallment(extraData) {
+  await addDoc(collection(db, "families", FAMILY_ID, "expenses"), {
+    text: pendingText,
+    amount: -extraData.installments.total * extraData.installments.value,
+    type: "expense",
+    category: "Outros",
 
-  async function sendEmoji(emoji) {
-    await addDoc(collection(db, "families", FAMILY_ID, "expenses"), {
-      type: "emoji",
-      emoji,
-      user: user.email,
-      createdAt: serverTimestamp(),
-    });
-    setShowEmojiPicker(false);
-  }
+    // 🔐 CRÉDITO (parcelado)
+    paymentMethod: "credit",
+    cardId: selectedCardId,
+    installments: extraData.installments,
+
+    createdAt: serverTimestamp(),
+    user: user.email,
+  });
+
+  setShowInstallmentModal(false);
+  setInstallmentData(null);
+  setPendingText("");
+}
+
+async function sendEmoji(emoji) {
+  await addDoc(collection(db, "families", FAMILY_ID, "expenses"), {
+    type: "emoji",
+    user: user.email,
+    createdAt: serverTimestamp(),
+  });
+  setShowEmojiPicker(false);
+}
+
 
   /* ================= UI ================= */
 
@@ -248,6 +265,47 @@ export default function Home({ goReport, goInstallments, goSettings }) {
           ))}
           <div ref={bottomRef} />
         </div>
+{/* ===== PAGAMENTO ===== */}
+<div style={styles.paymentBar}>
+  <button
+    type="button"
+    onClick={() => {
+      setPaymentMethod("cash");
+      setSelectedCardId(null);
+    }}
+    style={{
+      ...styles.paymentButton,
+      background:
+        paymentMethod === "cash" ? "#c8e6c9" : "#eee",
+    }}
+  >
+    💼 Carteira
+  </button>
+
+  <button
+    type="button"
+    onClick={() => setPaymentMethod("debit")}
+    style={{
+      ...styles.paymentButton,
+      background:
+        paymentMethod === "debit" ? "#bbdefb" : "#eee",
+    }}
+  >
+    💳 Débito
+  </button>
+
+  <button
+    type="button"
+    onClick={() => setPaymentMethod("credit")}
+    style={{
+      ...styles.paymentButton,
+      background:
+        paymentMethod === "credit" ? "#e1bee7" : "#eee",
+    }}
+  >
+    🟣 Crédito
+  </button>
+</div>
 
         <form onSubmit={sendExpense} style={styles.inputBar}>
           <span
@@ -418,4 +476,21 @@ const styles = {
     height: 40,
     cursor: "pointer",
   },
+  paymentBar: {
+  display: "flex",
+  gap: 6,
+  padding: "6px 8px",
+  borderTop: "1px solid #ddd",
+  background: "#fafafa",
+},
+
+paymentButton: {
+  flex: 1,
+  border: "none",
+  borderRadius: 6,
+  padding: "6px 0",
+  fontSize: 13,
+  cursor: "pointer",
+},
+
 };
