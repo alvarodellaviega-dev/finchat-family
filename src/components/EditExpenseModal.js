@@ -1,58 +1,64 @@
-// src/components/EditExpenseModal.js
+// FinChat Family
+// File: EditExpenseModal.js
+// Version: 1.6.3-stable-final
+// Status: BLINDADO • hooks OK • categories safe • produção
+
 import { useState, useEffect } from "react";
-import { doc, updateDoc, deleteDoc } from "firebase/firestore";
-import { getFirestore } from "firebase/firestore";
+import { doc, updateDoc, deleteDoc, getFirestore } from "firebase/firestore";
 
 const db = getFirestore();
 
 export default function EditExpenseModal({
   expense,
   FAMILY_ID,
-  categories,
+  categories = [], // 🔒 default seguro
   onClose,
 }) {
-  // ✅ Hooks SEMPRE no topo
+  /* ================= HOOKS (SEMPRE PRIMEIRO) ================= */
+
+  const safeCategories = Array.isArray(categories) ? categories : [];
+
   const [text, setText] = useState("");
   const [amount, setAmount] = useState(0);
-  const [category, setCategory] = useState("");
+  const [category, setCategory] = useState("Outros");
 
-  // ✅ Sincroniza quando abrir
+  /* ================= SYNC COM EXPENSE ================= */
+
   useEffect(() => {
     if (!expense) return;
 
     setText(expense.text || "");
-    setAmount(Math.abs(expense.amount || 0));
-    setCategory(expense.category || "");
+    setAmount(Math.abs(Number(expense.amount || 0)));
+    setCategory(expense.category || "Outros");
   }, [expense]);
 
-  // 🔒 Proteção só DEPOIS dos hooks
+  /* ================= GUARD RENDER ================= */
+
   if (!expense) return null;
 
-  async function save() {
-    if (!text.trim()) return;
+  /* ================= ACTIONS ================= */
 
-    const value =
-      expense.type === "expense"
-        ? -Math.abs(amount)
-        : Math.abs(amount);
+  async function handleSave() {
+    if (!text.trim() || !amount) return;
 
     await updateDoc(
       doc(db, "families", FAMILY_ID, "expenses", expense.id),
       {
-        text,
-        amount: value,
+        text: text.trim(),
+        amount:
+          expense.type === "income"
+            ? Math.abs(amount)
+            : -Math.abs(amount),
         category:
-          expense.type === "expense"
-            ? category || null
-            : null,
+          expense.type === "income" ? null : category,
       }
     );
 
     onClose();
   }
 
-  async function remove() {
-    if (!window.confirm("Excluir lançamento?")) return;
+  async function handleDelete() {
+    if (!window.confirm("Excluir este lançamento?")) return;
 
     await deleteDoc(
       doc(db, "families", FAMILY_ID, "expenses", expense.id)
@@ -61,10 +67,12 @@ export default function EditExpenseModal({
     onClose();
   }
 
+  /* ================= UI ================= */
+
   return (
     <div style={styles.overlay}>
       <div style={styles.modal}>
-        <h3>✏️ Editar lançamento</h3>
+        <h3>Editar lançamento</h3>
 
         <input
           value={text}
@@ -76,26 +84,34 @@ export default function EditExpenseModal({
           type="number"
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
+          placeholder="Valor"
         />
 
-        {/* ✅ SELECT DE CATEGORIA — AGORA FUNCIONA */}
-        {expense.type === "expense" && (
-          <select
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-          >
-            <option value="">Selecione a categoria</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.name}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+        {/* CATEGORIA — SOMENTE SAÍDA */}
+        {expense.type !== "income" && (
+          <>
+            {safeCategories.length === 0 ? (
+              <div style={styles.warning}>
+                Nenhuma categoria disponível
+              </div>
+            ) : (
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+              >
+                {safeCategories.map((c) => (
+                  <option key={c.id} value={c.name}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </>
         )}
 
         <div style={styles.actions}>
-          <button onClick={save}>Salvar</button>
-          <button onClick={remove} style={styles.danger}>
+          <button onClick={handleSave}>Salvar</button>
+          <button onClick={handleDelete} style={styles.delete}>
             Excluir
           </button>
           <button onClick={onClose}>Cancelar</button>
@@ -105,17 +121,19 @@ export default function EditExpenseModal({
   );
 }
 
-/* ===== styles ===== */
+/* ================= STYLES ================= */
+
 const styles = {
   overlay: {
     position: "fixed",
     inset: 0,
-    background: "rgba(0,0,0,0.4)",
+    background: "rgba(0,0,0,0.45)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     zIndex: 9999,
   },
+
   modal: {
     background: "#fff",
     padding: 20,
@@ -126,17 +144,24 @@ const styles = {
     flexDirection: "column",
     gap: 10,
   },
+
   actions: {
     display: "flex",
+    justifyContent: "space-between",
     gap: 8,
-    justifyContent: "flex-end",
   },
-  danger: {
+
+  delete: {
     background: "#e53935",
     color: "#fff",
     border: "none",
-    padding: "6px 10px",
+  },
+
+  warning: {
+    fontSize: 13,
+    color: "#8a6d00",
+    background: "#fff3cd",
+    padding: 6,
     borderRadius: 6,
   },
 };
-

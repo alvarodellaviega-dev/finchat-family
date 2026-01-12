@@ -10,61 +10,62 @@ export default function CategoryModal({
   onClose,
   onSelectCategory,
 }) {
+  const sortedCategories = [...categories].sort((a, b) =>
+    a.name.localeCompare(b.name, "pt-BR", { sensitivity: "base" })
+  );
+
   return (
     <div style={styles.overlay}>
       <div style={styles.modalCard}>
         <h3>Categorias</h3>
 
-        {categories.map((c) => (
-          <div
-            key={c.id}
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-            }}
-          >
-            <span
-              style={{
-                fontWeight: "bold",
-                cursor: "pointer",
-              }}
-              onClick={() => onSelectCategory(c.name)}
-            >
-              {c.name}
-            </span>
+        {/* LISTA */}
+        {sortedCategories.map((c) => {
+          const total = expenses
+            .filter((e) => e.category === c.name && e.amount < 0)
+            .reduce((sum, e) => sum + Math.abs(e.amount), 0);
 
-            <button
-              onClick={async () => {
-                const used = expenses.some(
-                  (e) => e.category === c.name
-                );
+          return (
+            <div key={c.id} style={styles.row}>
+              <span
+                style={styles.name}
+                onClick={() => onSelectCategory(c.name)}
+              >
+                {c.name}
+                {total > 0 && (
+                  <span style={styles.total}>
+                    {" "}
+                    — R$ {total.toFixed(2)}
+                  </span>
+                )}
+              </span>
 
-                if (
-                  used &&
-                  !window.confirm(
-                    "Essa categoria já foi usada. Deseja excluir mesmo assim?"
+              <button
+                onClick={async () => {
+                  const used = expenses.some(
+                    (e) => e.category === c.name
+                  );
+
+                  if (
+                    used &&
+                    !window.confirm(
+                      "Essa categoria já foi usada. Deseja excluir mesmo assim?"
+                    )
                   )
-                ) {
-                  return;
-                }
+                    return;
 
-                await deleteDoc(
-                  doc(
-                    db,
-                    "families",
-                    FAMILY_ID,
-                    "categories",
-                    c.id
-                  )
-                );
-              }}
-            >
-              🗑️
-            </button>
-          </div>
-        ))}
+                  await deleteDoc(
+                    doc(db, "families", FAMILY_ID, "categories", c.id)
+                  );
+                }}
+              >
+                🗑️
+              </button>
+            </div>
+          );
+        })}
 
+        {/* NOVA CATEGORIA */}
         <input
           placeholder="Nova categoria"
           value={newCategory}
@@ -102,7 +103,6 @@ const styles = {
     justifyContent: "center",
     zIndex: 9999,
   },
-
   modalCard: {
     background: "#fff",
     padding: 20,
@@ -113,4 +113,18 @@ const styles = {
     flexDirection: "column",
     gap: 10,
   },
+  row: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  name: {
+    fontWeight: "bold",
+    cursor: "pointer",
+  },
+  total: {
+    fontSize: 12,
+    opacity: 0.7,
+  },
 };
+

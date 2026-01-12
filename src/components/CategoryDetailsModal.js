@@ -1,12 +1,11 @@
-// FinChat Family
-// Version: 1.6.2
-// File: CategoryDetailsModal.js
-// Scope: Modal isolado para exibir lançamentos por categoria no mês
-// ⚠️ NÃO acessa Firestore
-// ⚠️ NÃO altera estado global
-// ⚠️ Apenas leitura via props
-
 import { calculateMonthlyImpact } from "../utils/calculateMonthlyImpact";
+
+function normalize(text) {
+  return text
+    ?.toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
 
 export default function CategoryDetailsModal({
   category,
@@ -16,46 +15,50 @@ export default function CategoryDetailsModal({
   limits,
   onClose,
 }) {
-  // 🔒 Regra oficial:
-  // - Apenas SAÍDAS
-  // - Apenas categoria selecionada
-  // - Apenas mês/ano atual
- const items = expenses.filter((e) => {
-  if (!e.createdAt) return false;
-  if (!e.category) return false;
-  if (e.category !== category) return false;
+  const normalizedCategory = normalize(category);
 
-  const d = e.createdAt.toDate();
-  return d.getMonth() === month && d.getFullYear() === year;
-});
+  const items = expenses
+    .filter((e) => {
+      if (!e.createdAt || !e.createdAt.toDate) return false;
+      if (typeof e.amount !== "number") return false;
+      if (e.amount >= 0) return false; // 👈 somente SAÍDAS
+      if (!e.category) return false;
 
+      const d = e.createdAt.toDate();
+      if (d.getMonth() !== month) return false;
+      if (d.getFullYear() !== year) return false;
+
+      return normalize(e.category) === normalizedCategory;
+    })
+    .sort(
+      (a, b) =>
+        a.createdAt.toDate() - b.createdAt.toDate()
+    );
 
   const total = items.reduce(
-    (sum, e) => sum + calculateMonthlyImpact(e, month, year),
+    (sum, e) =>
+      sum + Math.abs(calculateMonthlyImpact(e, month, year)),
     0
   );
 
-  const absoluteTotal = Math.abs(total);
-  const limit = limits?.[category];
+  const limit = Object.entries(limits || {}).find(
+  ([key]) => normalize(key) === normalizedCategory
+)?.[1];
 
-  const isExceeded = limit && absoluteTotal > limit;
+  const isExceeded = limit && total > limit;
   const isWarning =
-    limit && absoluteTotal >= limit * 0.8 && !isExceeded;
-
-  const monthLabel = String(month + 1).padStart(2, "0");
+    limit && total >= limit * 0.8 && !isExceeded;
 
   return (
     <div style={styles.overlay}>
       <div style={styles.modal}>
-        {/* HEADER */}
         <div style={styles.header}>
-          <strong>🗂️ {category}</strong>
+          <strong>{category}</strong>
           <span>
-            {monthLabel}/{year}
+            {String(month + 1).padStart(2, "0")}/{year}
           </span>
         </div>
 
-        {/* ALERTA */}
         {limit && (
           <div
             style={{
@@ -70,16 +73,15 @@ export default function CategoryDetailsModal({
             {isExceeded
               ? "🚨 Limite estourado"
               : isWarning
-              ? "⚠️ Atenção: perto do limite"
+              ? "⚠️ Perto do limite"
               : "✅ Dentro do limite"}
 
             <div style={styles.alertSub}>
-              R$ {absoluteTotal.toFixed(2)} / R$ {limit.toFixed(2)}
+              R$ {total.toFixed(2)} / R$ {limit.toFixed(2)}
             </div>
           </div>
         )}
 
-        {/* LISTA */}
         <div style={styles.list}>
           {items.length === 0 && (
             <p style={styles.empty}>
@@ -91,21 +93,14 @@ export default function CategoryDetailsModal({
             <div key={e.id} style={styles.item}>
               <span>{e.text}</span>
               <strong>
-                R${" "}
-                {Math.abs(
-                  calculateMonthlyImpact(e, month, year)
-                ).toFixed(2)}
+                R$ {Math.abs(e.amount).toFixed(2)}
               </strong>
             </div>
           ))}
         </div>
 
-        {/* TOTAL */}
         <div style={styles.total}>
-          Total do mês:{" "}
-          <strong>
-            R$ {absoluteTotal.toFixed(2)}
-          </strong>
+          Total do mês: <strong>R$ {total.toFixed(2)}</strong>
         </div>
 
         <button style={styles.close} onClick={onClose}>
@@ -128,7 +123,6 @@ const styles = {
     justifyContent: "center",
     zIndex: 9999,
   },
-
   modal: {
     background: "#fff",
     padding: 20,
@@ -139,40 +133,32 @@ const styles = {
     flexDirection: "column",
     gap: 12,
   },
-
   header: {
     display: "flex",
     justifyContent: "space-between",
-    alignItems: "center",
   },
-
   alert: {
     padding: 10,
     borderRadius: 8,
     fontWeight: "bold",
   },
-
   alertSub: {
     fontSize: 13,
     marginTop: 4,
     fontWeight: "normal",
   },
-
   alertOk: {
     background: "#e6f7ee",
     color: "#1b7f4b",
   },
-
   alertWarning: {
     background: "#fff7e6",
     color: "#9a6b00",
   },
-
   alertDanger: {
     background: "#fdecea",
     color: "#b00020",
   },
-
   list: {
     display: "flex",
     flexDirection: "column",
@@ -180,7 +166,6 @@ const styles = {
     maxHeight: 260,
     overflowY: "auto",
   },
-
   item: {
     display: "flex",
     justifyContent: "space-between",
@@ -188,18 +173,15 @@ const styles = {
     borderBottom: "1px solid #eee",
     paddingBottom: 4,
   },
-
   empty: {
     fontSize: 14,
     color: "#777",
   },
-
   total: {
     borderTop: "1px solid #ddd",
     paddingTop: 8,
     fontSize: 15,
   },
-
   close: {
     marginTop: 6,
     background: "#25D366",
