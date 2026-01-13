@@ -1,34 +1,26 @@
-import { useState } from "react";
-
-export default function InstallmentModal({
-  data,
+export default function CreditConfirmModal({
+  visible,
+  value,
   cards = [],
   selectedCardId,
   setSelectedCardId,
   onConfirm,
   onCancel,
 }) {
-  const [error, setError] = useState(null);
-
-  if (!data) return null;
+  if (!visible) return null;
 
   return (
     <div style={styles.overlay}>
       <div style={styles.modal}>
-        <h3>Confirmar parcelamento</h3>
+        <h3>Compra no crédito à vista</h3>
 
-        {/* ✅ USANDO O FORMATO PARSADO */}
         <p>
-          {data.total}x de R$ {data.installmentValue.toFixed(2)}
+          Valor: <strong>R$ {value.toFixed(2)}</strong>
         </p>
 
-        {/* 🔐 SELETOR DE CARTÃO */}
         <select
           value={selectedCardId || ""}
-          onChange={(e) => {
-            setSelectedCardId(e.target.value || null);
-            setError(null);
-          }}
+          onChange={(e) => setSelectedCardId(e.target.value || null)}
           style={styles.select}
         >
           <option value="">Selecione o cartão</option>
@@ -40,24 +32,16 @@ export default function InstallmentModal({
           ))}
         </select>
 
-        {error && (
-          <div style={{ color: "red", fontSize: 13 }}>
-            {error}
-          </div>
-        )}
-
         <div style={styles.actions}>
           <button onClick={onCancel}>Cancelar</button>
 
           <button
             onClick={() => {
               if (!selectedCardId) {
-                setError("Selecione um cartão");
+                alert("Selecione um cartão");
                 return;
               }
-
-              // ✅ ENVIA O DATA ORIGINAL (PARSADO)
-              onConfirm(data);
+              onConfirm();
             }}
           >
             Confirmar
@@ -68,33 +52,30 @@ export default function InstallmentModal({
   );
 }
 
-/* ================= STYLES ================= */
-
 const styles = {
   overlay: {
     position: "fixed",
     inset: 0,
-    background: "rgba(0,0,0,0.4)",
+    background: "rgba(0,0,0,0.45)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    zIndex: 1000,
+    zIndex: 9999,
   },
   modal: {
     background: "#fff",
     padding: 20,
-    borderRadius: 8,
-    width: 300,
+    borderRadius: 10,
+    width: 320,
   },
   select: {
     width: "100%",
     padding: 8,
     marginTop: 10,
-    marginBottom: 12,
+    marginBottom: 16,
   },
   actions: {
     display: "flex",
     justifyContent: "space-between",
   },
 };
-

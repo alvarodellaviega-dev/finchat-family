@@ -2,23 +2,26 @@ import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { db } from "../firebase";
 import { assertMonthOpen } from "./assertMonthOpen";
 
-export async function createExpense({
-  familyId,
-  expense,
-}) {
-  const date = new Date(expense.date);
-  const month = date.getMonth();
-  const year = date.getFullYear();
+export async function createExpense({ familyId, expense }) {
+  // 🔐 Garantia de data válida
+  const expenseDate =
+    expense.date instanceof Date
+      ? expense.date
+      : new Date(expense.date);
 
-  // 🔒 REGRA DE NEGÓCIO (FONTE ÚNICA)
+  const month = expenseDate.getMonth();
+  const year = expenseDate.getFullYear();
+
+  // 🔒 REGRA DE NEGÓCIO — FONTE ÚNICA
   await assertMonthOpen({ familyId, month, year });
 
-  // ✅ Se chegou aqui, o mês está aberto
+  // ✅ Persistência neutra (expense / credit_payment / parcelas)
   await addDoc(
     collection(db, "families", familyId, "expenses"),
     {
       ...expense,
-      createdAt: serverTimestamp(),
+      date: expenseDate,        // data real do lançamento
+      createdAt: serverTimestamp(), // auditoria
     }
   );
 }

@@ -1,7 +1,7 @@
 // FinChat Family
 // File: Home.js
-// Version: 1.6.3-stable (final corrigido)
-// Status: categorias + detalhes + edição OK • iOS safe
+// Version: 2.0.0-stable
+// Status: fluxo financeiro validado (cash / debit / credit / installments)
 
 import { useEffect, useState, useRef } from "react";
 import { auth } from "./firebase";
@@ -17,20 +17,21 @@ import {
 import { signOut } from "firebase/auth";
 
 // Components
+import PaymentBar from "./components/PaymentBar";
+
+import InstallmentModal from "./InstallmentModal";
+import InstallmentBubble from "./components/InstallmentBubble";
 import EmojiPicker from "./components/EmojiPicker";
 import EditExpenseModal from "./components/EditExpenseModal";
 import CategoryModal from "./components/CategoryModal";
 import CategoryDetailsModal from "./components/CategoryDetailsModal";
 import FiltersModal from "./components/FiltersModal";
-import InstallmentModal from "./InstallmentModal";
-import InstallmentBubble from "./components/InstallmentBubble";
 
 // Utils
 import { parseInstallment } from "./installmentsParser";
 
 const db = getFirestore();
 const FAMILY_ID = "finchat-family-main";
-
 
 const MONTHS = [
   "Janeiro","Fevereiro","Março","Abril","Maio","Junho",
@@ -57,13 +58,18 @@ export default function Home({ goReport, goInstallments, goSettings }) {
   const bottomRef = useRef(null);
   const now = new Date();
 
-  const [text, setText] = useState("");
+  /* ================= STATE ================= */
+
+  const APP_VERSION = "2.0.0-stable";
+const [text, setText] = useState("");
   const [expenses, setExpenses] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [newCategory, setNewCategory] = useState("");
+  const [cards, setCards] = useState([]);
 
   const [editExpense, setEditExpense] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState(null);
+const [newCategory, setNewCategory] = useState("");
+const [showPaymentConfirm, setShowPaymentConfirm] = useState(false);
 
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [showCategories, setShowCategories] = useState(false);
@@ -74,12 +80,16 @@ export default function Home({ goReport, goInstallments, goSettings }) {
   const [showInstallmentModal, setShowInstallmentModal] = useState(false);
   const [pendingText, setPendingText] = useState("");
 
+
   const [month, setMonth] = useState(now.getMonth());
   const [year, setYear] = useState(now.getFullYear());
   const [typeFilter, setTypeFilter] = useState("all");
-  const [paymentMethod, setPaymentMethod] = useState("cash");
-// "cash" | "debit" | "credit"
-const [selectedCardId, setSelectedCardId] = useState(null);
+
+  const [paymentMethod, setPaymentMethod] = useState("cash"); // cash | debit | credit
+  const [selectedCardId, setSelectedCardId] = useState(null);
+
+  const isIncomeText = ["recebi", "ganhei", "pix", "salário", "salario"]
+    .some((w) => text.toLowerCase().includes(w));
 
   /* ================= FIRESTORE ================= */
 
@@ -113,6 +123,17 @@ const [selectedCardId, setSelectedCardId] = useState(null);
     );
   }, [user]);
 
+  useEffect(() => {
+    if (!user) return;
+
+    return onSnapshot(
+      collection(db, "families", FAMILY_ID, "cards"),
+      (snap) => {
+        setCards(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      }
+    );
+  }, [user]);
+
   /* ================= FILTER ================= */
 
   const filtered = expenses.filter((e) => {
@@ -142,53 +163,87 @@ async function saveExpense(rawText) {
   const isIncome = ["recebi", "ganhei", "pix", "salário", "salario"]
     .some((w) => lower.includes(w));
 
+  // ❌ CRÉDITO JAMAIS PASSA AQUI
+  if (!isIncome && paymentMethod === "credit") {
+    return;
+  }
+
+  // 💳 débito exige cartão
+  if (!isIncome && paymentMethod === "debit" && !selectedCardId) {
+    alert("Selecione um cartão de débito");
+    return;
+  }
+
+  const amount = isIncome
+    ? Math.abs(value)
+    : -Math.abs(value);
+
   await addDoc(collection(db, "families", FAMILY_ID, "expenses"), {
     text: rawText.trim(),
-    amount: isIncome ? Math.abs(value) : -Math.abs(value),
+    amount,
     type: isIncome ? "income" : "expense",
     category: isIncome ? null : "Outros",
-
-    // 🔐 NOVO PADRÃO
     paymentMethod,
-    cardId:
-      paymentMethod === "debit" || paymentMethod === "credit"
-        ? selectedCardId
-        : null,
-
+    cardId: paymentMethod === "debit" ? selectedCardId : null,
     createdAt: serverTimestamp(),
     user: user.email,
   });
 }
+
 
 async function sendExpense(e) {
   e.preventDefault();
   if (!text.trim()) return;
 
   const parsed = parseInstallment(text);
-  if (parsed) {
+
+  // 🟣 CRÉDITO (à vista ou parcelado)
+  if (paymentMethod === "credit") {
+    // se não digitou parcelas, força 1x (à vista)
+    const data = parsed ?? {
+      total: 1,
+      installmentValue: (() => {
+        const match = text.match(/(\d+([.,]\d+)?)/);
+        if (!match) return 0;
+        return Number(match[1].replace(",", "."));
+      })(),
+      startMonth: new Date().getMonth(),
+      startYear: new Date().getFullYear(),
+    };
+
     setPendingText(text);
-    setInstallmentData(parsed);
+    setInstallmentData(data);
     setShowInstallmentModal(true);
     setText("");
     return;
   }
 
+  // 💼 cash / 💳 debit
   await saveExpense(text);
   setText("");
 }
 
+
+
 async function confirmInstallment(extraData) {
+  if (!selectedCardId) {
+    alert("Selecione um cartão");
+    return;
+  }
+
   await addDoc(collection(db, "families", FAMILY_ID, "expenses"), {
     text: pendingText,
-    amount: -extraData.installments.total * extraData.installments.value,
+    amount: 0, // ❗ crédito não afeta saldo
     type: "expense",
     category: "Outros",
-
-    // 🔐 CRÉDITO (parcelado)
     paymentMethod: "credit",
     cardId: selectedCardId,
-    installments: extraData.installments,
-
+    installments: {
+      total: extraData.total,
+      value: extraData.installmentValue,
+      startMonth: extraData.startMonth,
+      startYear: extraData.startYear,
+    },
     createdAt: serverTimestamp(),
     user: user.email,
   });
@@ -196,217 +251,205 @@ async function confirmInstallment(extraData) {
   setShowInstallmentModal(false);
   setInstallmentData(null);
   setPendingText("");
+  setSelectedCardId(null);
 }
 
 async function sendEmoji(emoji) {
   await addDoc(collection(db, "families", FAMILY_ID, "expenses"), {
     type: "emoji",
+    emoji,
     user: user.email,
     createdAt: serverTimestamp(),
   });
   setShowEmojiPicker(false);
 }
 
+/* ================= UI ================= */
 
-  /* ================= UI ================= */
-
-  return (
-    <>
-      <div style={styles.container}>
-        <header style={styles.header}>
-          <strong>FinChat Family</strong>
-          <div style={styles.headerActions}>
-            <button onClick={() => setShowFilters(true)}>🔍</button>
-            <button onClick={() => setShowCategories(true)}>🗂️</button>
-            <button onClick={goInstallments}>💳</button>
-            <button onClick={goReport}>📊</button>
-            <button onClick={goSettings}>⚙️</button>
-            <button onClick={() => signOut(auth)}>Sair</button>
-          </div>
-        </header>
-
-        <div style={styles.balance}>
-          Saldo atual:{" "}
-          <strong style={{ color: balance >= 0 ? "green" : "red" }}>
-            R$ {balance.toFixed(2)}
-          </strong>
-        </div>
-
-        <div style={styles.chat}>
-          {filtered.map((e) => (
-            <div
-              key={e.id}
-              style={{
-                ...styles.bubble,
-                alignSelf: e.user === user.email ? "flex-end" : "flex-start",
-              }}
-            >
-              {e.type === "emoji" ? (
-                <div style={{ fontSize: 28 }}>{e.emoji}</div>
-              ) : (
-                <>
-                  {e.category && (
-                    <div style={styles.categoryLabel}>{e.category}</div>
-                  )}
-                  <div>{e.text}</div>
-                  <strong>R$ {Math.abs(e.amount).toFixed(2)}</strong>
-
-                  {e.installments && <InstallmentBubble expense={e} />}
-
-                  <button
-                    style={styles.editButton}
-                    onClick={() => setEditExpense(e)}
-                  >
-                    ✏️
-                  </button>
-                </>
-              )}
-            </div>
-          ))}
-          <div ref={bottomRef} />
-        </div>
-{/* ===== PAGAMENTO ===== */}
-<div style={styles.paymentBar}>
-  <button
-    type="button"
-    onClick={() => {
-      setPaymentMethod("cash");
-      setSelectedCardId(null);
-    }}
-    style={{
-      ...styles.paymentButton,
-      background:
-        paymentMethod === "cash" ? "#c8e6c9" : "#eee",
-    }}
-  >
-    💼 Carteira
-  </button>
-
-  <button
-    type="button"
-    onClick={() => setPaymentMethod("debit")}
-    style={{
-      ...styles.paymentButton,
-      background:
-        paymentMethod === "debit" ? "#bbdefb" : "#eee",
-    }}
-  >
-    💳 Débito
-  </button>
-
-  <button
-    type="button"
-    onClick={() => setPaymentMethod("credit")}
-    style={{
-      ...styles.paymentButton,
-      background:
-        paymentMethod === "credit" ? "#e1bee7" : "#eee",
-    }}
-  >
-    🟣 Crédito
-  </button>
+return (
+  <>
+    <div style={styles.container}>
+      <header style={styles.header}>
+        <div style={{ display: "flex", flexDirection: "column" }}>
+  <strong>FinChat Family</strong>
+  <span style={{ fontSize: 11, opacity: 0.7 }}>
+    v{APP_VERSION}
+  </span>
 </div>
 
-        <form onSubmit={sendExpense} style={styles.inputBar}>
-          <span
-            style={styles.iconButton}
-            onClick={() => setShowEmojiPicker(true)}
-          >
-            😊
-          </span>
+        <div style={styles.headerActions}>
+          <button onClick={() => setShowFilters(true)}>🔍</button>
+          <button onClick={() => setShowCategories(true)}>🗂️</button>
+          <button onClick={goInstallments}>💳</button>
+          <button onClick={goReport}>📊</button>
+          <button onClick={goSettings}>⚙️</button>
+          <button onClick={() => signOut(auth)}>Sair</button>
+        </div>
+      </header>
 
-          <input
-            style={styles.textInput}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder="Digite um gasto ou ganho..."
-          />
-
-          <button
-            type="submit"
-            style={styles.sendButton}
-            disabled={!text.trim()}
-          >
-            ➤
-          </button>
-        </form>
+      <div style={styles.balance}>
+        Saldo atual:{" "}
+        <strong style={{ color: balance >= 0 ? "green" : "red" }}>
+          R$ {balance.toFixed(2)}
+        </strong>
       </div>
 
-      {showEmojiPicker && (
-        <EmojiPicker
-          onSelect={sendEmoji}
-          onClose={() => setShowEmojiPicker(false)}
-        />
-      )}
+      <div style={styles.chat}>
+        {filtered.map((e) => (
+          <div
+            key={e.id}
+            style={{
+              ...styles.bubble,
+              alignSelf:
+                e.user === user.email ? "flex-end" : "flex-start",
+            }}
+          >
+            {e.type === "emoji" ? (
+              <div style={{ fontSize: 28 }}>{e.emoji}</div>
+            ) : (
+              <>
+                {e.category && (
+                  <div style={styles.categoryLabel}>{e.category}</div>
+                )}
+                <div>{e.text}</div>
+                <strong>R$ {Math.abs(e.amount).toFixed(2)}</strong>
 
-      {editExpense && (
-        <EditExpenseModal
-          expense={editExpense}
-          FAMILY_ID={FAMILY_ID}
-          categories={categories}
-          onClose={() => setEditExpense(null)}
-        />
-      )}
+                {e.installments && (
+                  <InstallmentBubble expense={e} />
+                )}
 
-      {showFilters && (
-        <FiltersModal
-          month={month}
-          setMonth={setMonth}
-          year={year}
-          setYear={setYear}
-          MONTHS={MONTHS}
-          typeFilter={typeFilter}
-          setTypeFilter={setTypeFilter}
-          onClose={() => setShowFilters(false)}
-        />
-      )}
+                <button
+                  style={styles.editButton}
+                  onClick={() => setEditExpense(e)}
+                >
+                  ✏️
+                </button>
+              </>
+            )}
+          </div>
+        ))}
+        <div ref={bottomRef} />
+      </div>
+<PaymentBar
+  visible={!isIncomeText && text.trim().length > 0}
+  paymentMethod={paymentMethod}
+  setPaymentMethod={(method) => {
+    setPaymentMethod(method);
+    setSelectedCardId(null);
+  }}
+  selectedCardId={selectedCardId}
+  setSelectedCardId={setSelectedCardId}
+  cards={cards}
+  styles={styles}
+/>
 
-      {showCategories && (
-        <CategoryModal
-          db={db}
-          FAMILY_ID={FAMILY_ID}
-          categories={categories}
-          expenses={expenses}
-          newCategory={newCategory}
-          setNewCategory={setNewCategory}
-          onClose={() => setShowCategories(false)}
-          onSelectCategory={(category) => {
-            setSelectedCategory(category);
-            setShowCategories(false);
-            setShowCategoryDetails(true);
-          }}
-        />
-      )}
 
-      {showCategoryDetails && selectedCategory && (
-        <CategoryDetailsModal
-          category={selectedCategory}
-          expenses={expenses}
-          month={month}
-          year={year}
-          limits={CATEGORY_LIMITS}
-          onClose={() => {
-            setShowCategoryDetails(false);
-            setSelectedCategory(null);
-          }}
-        />
-      )}
 
-      {showInstallmentModal && installmentData && (
-        <InstallmentModal
-          data={installmentData}
-          onConfirm={confirmInstallment}
-          onCancel={() => setShowInstallmentModal(false)}
+      <form onSubmit={sendExpense} style={styles.inputBar}>
+        <span
+          style={styles.iconButton}
+          onClick={() => setShowEmojiPicker(true)}
+        >
+          😊
+        </span>
+
+        <input
+          style={styles.textInput}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Digite um gasto ou ganho..."
         />
-      )}
-    </>
-  );
+
+        <button
+          type="submit"
+          style={styles.sendButton}
+          disabled={!text.trim()}
+        >
+          ➤
+        </button>
+      </form>
+    </div>
+
+    {showEmojiPicker && (
+      <EmojiPicker
+        onSelect={sendEmoji}
+        onClose={() => setShowEmojiPicker(false)}
+      />
+    )}
+
+    {editExpense && (
+      <EditExpenseModal
+        expense={editExpense}
+        FAMILY_ID={FAMILY_ID}
+        categories={categories}
+        onClose={() => setEditExpense(null)}
+      />
+    )}
+
+    {showFilters && (
+      <FiltersModal
+        month={month}
+        setMonth={setMonth}
+        year={year}
+        setYear={setYear}
+        MONTHS={MONTHS}
+        typeFilter={typeFilter}
+        setTypeFilter={setTypeFilter}
+        onClose={() => setShowFilters(false)}
+      />
+    )}
+
+    {showCategories && (
+      <CategoryModal
+        db={db}
+        FAMILY_ID={FAMILY_ID}
+        categories={categories}
+        expenses={expenses}
+        newCategory={newCategory}
+        setNewCategory={setNewCategory}
+        onClose={() => setShowCategories(false)}
+        onSelectCategory={(category) => {
+          setSelectedCategory(category);
+          setShowCategories(false);
+          setShowCategoryDetails(true);
+        }}
+      />
+    )}
+
+    {showCategoryDetails && selectedCategory && (
+      <CategoryDetailsModal
+        category={selectedCategory}
+        expenses={expenses}
+        month={month}
+        year={year}
+        limits={CATEGORY_LIMITS}
+        onClose={() => {
+          setShowCategoryDetails(false);
+          setSelectedCategory(null);
+        }}
+      />
+    )}
+
+    {showInstallmentModal && installmentData && (
+      <InstallmentModal
+        data={installmentData}
+        cards={cards}
+        selectedCardId={selectedCardId}
+        setSelectedCardId={setSelectedCardId}
+        onConfirm={confirmInstallment}
+        onCancel={() => setShowInstallmentModal(false)}
+      />
+    )}
+
+  </>
+);
 }
 
 /* ================= STYLES ================= */
 
 const styles = {
   container: { height: "100vh", display: "flex", flexDirection: "column" },
+
   header: {
     background: "#075E54",
     color: "#fff",
@@ -414,12 +457,18 @@ const styles = {
     display: "flex",
     justifyContent: "space-between",
   },
-  headerActions: { display: "flex", gap: 6 },
+
+  headerActions: {
+    display: "flex",
+    gap: 6,
+  },
+
   balance: {
     padding: 8,
     textAlign: "center",
     background: "#f1f8e9",
   },
+
   chat: {
     flex: 1,
     padding: 10,
@@ -428,6 +477,7 @@ const styles = {
     flexDirection: "column",
     gap: 8,
   },
+
   bubble: {
     maxWidth: "75%",
     padding: "8px 12px",
@@ -435,11 +485,13 @@ const styles = {
     background: "#DCF8C6",
     position: "relative",
   },
+
   categoryLabel: {
     fontSize: 12,
     opacity: 0.7,
     marginBottom: 2,
   },
+
   editButton: {
     position: "absolute",
     bottom: 4,
@@ -448,23 +500,27 @@ const styles = {
     background: "transparent",
     cursor: "pointer",
   },
+
   inputBar: {
     display: "flex",
     alignItems: "center",
     padding: 8,
     borderTop: "1px solid #ddd",
   },
+
   iconButton: {
     fontSize: 22,
     marginRight: 8,
     cursor: "pointer",
   },
+
   textInput: {
     flex: 1,
     padding: 10,
     borderRadius: 20,
     border: "1px solid #ccc",
   },
+
   sendButton: {
     marginLeft: 8,
     fontSize: 20,
@@ -476,21 +532,21 @@ const styles = {
     height: 40,
     cursor: "pointer",
   },
+
   paymentBar: {
-  display: "flex",
-  gap: 6,
-  padding: "6px 8px",
-  borderTop: "1px solid #ddd",
-  background: "#fafafa",
-},
+    display: "flex",
+    gap: 6,
+    padding: "6px 8px",
+    borderTop: "1px solid #ddd",
+    background: "#fafafa",
+  },
 
-paymentButton: {
-  flex: 1,
-  border: "none",
-  borderRadius: 6,
-  padding: "6px 0",
-  fontSize: 13,
-  cursor: "pointer",
-},
-
+  paymentButton: {
+    flex: 1,
+    border: "none",
+    borderRadius: 6,
+    padding: "6px 0",
+    fontSize: 13,
+    cursor: "pointer",
+  },
 };

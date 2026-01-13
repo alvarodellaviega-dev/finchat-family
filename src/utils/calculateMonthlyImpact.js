@@ -1,3 +1,8 @@
+import {
+  TRANSACTION_TYPES,
+  PAYMENT_METHODS
+} from "../types/transaction";
+
 export function calculateMonthlyImpact(expense, month, year) {
   if (!expense || !expense.createdAt) return 0;
 
@@ -5,41 +10,26 @@ export function calculateMonthlyImpact(expense, month, year) {
   if (d.getMonth() !== month || d.getFullYear() !== year)
     return 0;
 
+  const amount = Math.abs(expense.amount);
+
   // 💰 ENTRADA
-  if (expense.type === "income") {
-    return Math.abs(expense.amount);
+  if (expense.type === TRANSACTION_TYPES.INCOME) {
+    return amount;
   }
 
-  // 💳 CRÉDITO PARCELADO → impacto só nas parcelas
+  // 💸 SAÍDA REAL DE CAIXA (DÉBITO / DINHEIRO)
   if (
-    expense.paymentMethod === "credit" &&
-    expense.installments &&
-    expense.installments.total > 1
+    expense.type === TRANSACTION_TYPES.EXPENSE &&
+    expense.paymentMethod !== PAYMENT_METHODS.CREDIT
   ) {
-    const { startMonth, startYear, total, value } =
-      expense.installments;
-
-    const startIndex = startYear * 12 + startMonth;
-    const targetIndex = year * 12 + month;
-    const current = targetIndex - startIndex + 1;
-
-    if (current < 1 || current > total) return 0;
-
-    return -Math.abs(value);
+    return -amount;
   }
 
-  // 💳 CRÉDITO À VISTA → SAÍDA DO MÊS
-  if (
-    expense.paymentMethod === "credit" &&
-    !expense.installments
-  ) {
-    return -Math.abs(expense.amount);
+  // 💳 PAGAMENTO DE CARTÃO (PASSO 3)
+  if (expense.type === TRANSACTION_TYPES.CREDIT_PAYMENT) {
+    return -amount;
   }
 
-  // 💸 DÉBITO → SAÍDA DO MÊS
-  if (expense.paymentMethod === "debit") {
-    return -Math.abs(expense.amount);
-  }
-
+  // ❌ COMPRA NO CRÉDITO NÃO AFETA CAIXA
   return 0;
 }
