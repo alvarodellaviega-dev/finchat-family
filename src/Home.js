@@ -1,6 +1,9 @@
 // FinChat Family
 // File: Home.js
-// Scope: Tela principal (chat + lançamentos)
+// Version: 2.0.0-stable
+// Status: fluxo financeiro validado (cash / debit / credit / installments)
+
+import CardSelectModal from "./components/CardSelectModal";
 
 import { useEffect, useState, useRef } from "react";
 import { auth } from "./firebase";
@@ -16,12 +19,15 @@ import {
 import { signOut } from "firebase/auth";
 
 // Components
+import PaymentBar from "./components/PaymentBar";
+
+import InstallmentModal from "./InstallmentModal";
+import InstallmentBubble from "./components/InstallmentBubble";
 import EmojiPicker from "./components/EmojiPicker";
 import EditExpenseModal from "./components/EditExpenseModal";
 import CategoryModal from "./components/CategoryModal";
+import CategoryDetailsModal from "./components/CategoryDetailsModal";
 import FiltersModal from "./components/FiltersModal";
-import InstallmentModal from "./InstallmentModal";
-import InstallmentBubble from "./components/InstallmentBubble";
 
 // Utils
 import { parseInstallment } from "./installmentsParser";
@@ -29,221 +35,516 @@ import { parseInstallment } from "./installmentsParser";
 const db = getFirestore();
 const FAMILY_ID = "finchat-family-main";
 
-export default function Home({
-  goReport,
-  goInstallments,
-  goSettings,
-  appVersion,
-}) {
+const MONTHS = [
+  "Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+  "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro",
+];
+
+const CATEGORY_LIMITS = {
+  Mercado: 800,
+  Alimentação: 900,
+  Lanche: 300,
+  Transporte: 300,
+  Combustível: 2000,
+  "Manutenção Carro": 600,
+  "Manutenção Casa": 600,
+  Saúde: 400,
+  Lazer: 400,
+  "Pagamentos Cartão": 6000,
+  Impostos: 300,
+  Outros: 300,
+};
+
+export default function Home({ goReport, goInstallments, goSettings }) {
   const user = auth.currentUser;
   const bottomRef = useRef(null);
+  const now = new Date();
 
   /* ================= STATE ================= */
-  const [text, setText] = useState("");
+
+  const APP_VERSION = "2.0.0-stable";
+const [text, setText] = useState("");
   const [expenses, setExpenses] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [cards, setCards] = useState([]);
+
   const [editExpense, setEditExpense] = useState(null);
+  const [selectedCategory, setSelectedCategory] = useState(null);
+const [newCategory, setNewCategory] = useState("");
+const [showPaymentConfirm, setShowPaymentConfirm] = useState(false);
+
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const [showFilters, setShowFilters] = useState(false);
   const [showCategories, setShowCategories] = useState(false);
+  const [showCategoryDetails, setShowCategoryDetails] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+
   const [installmentData, setInstallmentData] = useState(null);
   const [showInstallmentModal, setShowInstallmentModal] = useState(false);
   const [pendingText, setPendingText] = useState("");
 
+  const [month, setMonth] = useState(now.getMonth());
+  const [year, setYear] = useState(now.getFullYear());
+  const [typeFilter, setTypeFilter] = useState("all");
+
+  const [paymentMethod, setPaymentMethod] = useState("cash"); // cash | debit | credit
+  const [selectedCardId, setSelectedCardId] = useState(null);
+const [showCardSelect, setShowCardSelect] = useState(false);
+const [showPayBillModal, setShowPayBillModal] = useState(false);
+const [payBillValue, setPayBillValue] = useState(0);
+
+  const isIncomeText = ["recebi", "ganhei", "pix", "salário", "salario"]
+    .some((w) => text.toLowerCase().includes(w));
+
   /* ================= FIRESTORE ================= */
+
   useEffect(() => {
     if (!user) return;
 
-    const q = query(
-      collection(db, "families", FAMILY_ID, "expenses"),
-      orderBy("createdAt", "asc")
+    return onSnapshot(
+      query(
+        collection(db, "families", FAMILY_ID, "expenses"),
+        orderBy("createdAt", "asc")
+      ),
+      (snap) => {
+        setExpenses(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        setTimeout(() => bottomRef.current?.scrollIntoView(), 50);
+      }
     );
-
-    return onSnapshot(q, (snap) => {
-      setExpenses(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-      setTimeout(() => bottomRef.current?.scrollIntoView(), 50);
-    });
   }, [user]);
 
-  /* ================= ACTIONS ================= */
+  useEffect(() => {
+    if (!user) return;
 
-  async function saveExpense(rawText) {
-    const match = rawText.match(/(\d+([.,]\d+)?)/);
-    if (!match) return;
+    return onSnapshot(
+      collection(db, "families", FAMILY_ID, "categories"),
+      (snap) => {
+        setCategories(
+          snap.docs
+            .map((d) => ({ id: d.id, ...d.data() }))
+            .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
+        );
+      }
+    );
+  }, [user]);
 
-    const value = Number(match[1].replace(",", "."));
-    const isIncome = rawText.toLowerCase().includes("recebi");
+  useEffect(() => {
+    if (!user) return;
 
+    return onSnapshot(
+      collection(db, "families", FAMILY_ID, "cards"),
+      (snap) => {
+        setCards(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      }
+    );
+  }, [user]);
+
+/* ================= FILTER (CHAT) ================= */
+
+const filtered = expenses.filter((e) => {
+  // 😊 emoji sempre aparece
+  if (e.type === "emoji") return true;
+
+  if (!e.createdAt?.toDate) return false;
+
+  const d = e.createdAt.toDate();
+  if (d.getMonth() !== month) return false;
+  if (d.getFullYear() !== year) return false;
+
+  const amount = Number(e.amount) || 0;
+
+  // 🟢 ENTRADAS
+  if (typeFilter === "income") {
+    return amount > 0 || e.type === "income";
+  }
+
+  // 🔴 SAÍDAS
+  if (typeFilter === "expense") {
+    return amount < 0 || e.type === "expense";
+  }
+
+  // 🔵 TODOS
+  return true;
+});
+
+
+/* ================= BALANCE ================= */
+/**
+ * REGRA FINAL DO SALDO:
+ * - Entradas SOMAM
+ * - Débito / dinheiro SOMAM
+ * - Crédito (à vista ou parcelado) NUNCA entra
+ */
+
+const balance = filtered.reduce((sum, e) => {
+  // ❌ crédito nunca entra no saldo
+  if (e.paymentMethod === "credit") return sum;
+
+  return sum + (Number(e.amount) || 0);
+}, 0);
+
+/* ================= ACTIONS ================= */
+
+// 🔹 SALVA DESPESA (ENTRADA OU SAÍDA)
+async function saveExpense(rawText) {
+  const match = rawText.match(/(\d+([.,]\d+)?)/);
+  if (!match) return;
+
+  const value = Number(match[1].replace(",", "."));
+  const lower = rawText.toLowerCase();
+
+  const isIncome = ["recebi", "ganhei", "pix", "salário", "salario"]
+    .some((w) => lower.includes(w));
+
+  /* ===== ENTRADA ===== */
+  if (isIncome) {
     await addDoc(collection(db, "families", FAMILY_ID, "expenses"), {
-      text: rawText,
-      amount: isIncome ? value : -value,
-      type: isIncome ? "income" : "expense",
+      text: rawText.trim(),
+      amount: Math.abs(value),
+      type: "income",
+      category: null,
+      paymentMethod: "income",
+      cardId: null,
       createdAt: serverTimestamp(),
       user: user.email,
     });
+    return;
   }
 
-  async function sendExpense(e) {
-    e.preventDefault();
-    if (!text.trim()) return;
+  /* ===== SAÍDA ===== */
 
-    const parsed = parseInstallment(text);
-    if (parsed) {
-      setPendingText(text);
-      setInstallmentData(parsed);
-      setShowInstallmentModal(true);
-      setText("");
-      return;
-    }
+  // ❌ crédito nunca passa aqui
+  if (paymentMethod === "credit") {
+    console.warn("Crédito deve passar pelo fluxo de parcelamento");
+    return;
+  }
 
+  // 💳 débito exige cartão
+  if (paymentMethod === "debit" && !selectedCardId) {
+    alert("Selecione um cartão de débito");
+    return;
+  }
+
+  await addDoc(collection(db, "families", FAMILY_ID, "expenses"), {
+    text: rawText.trim(),
+    amount: -Math.abs(value),
+    type: "expense",
+    category: "Outros",
+    paymentMethod,
+    cardId: paymentMethod === "debit" ? selectedCardId : null,
+    createdAt: serverTimestamp(),
+    user: user.email,
+  });
+}
+
+// 🔹 ENVIO DO CHAT
+async function sendExpense(e) {
+  e.preventDefault();
+  if (!text.trim()) return;
+
+  const lower = text.toLowerCase();
+  const isIncome = ["recebi", "ganhei", "pix", "salário", "salario"]
+    .some((w) => lower.includes(w));
+
+  // ✅ ENTRADA: ignora método e NÃO abre modal
+  if (isIncome) {
     await saveExpense(text);
     setText("");
+    setPaymentMethod("cash");
+    setSelectedCardId(null);
+    return;
   }
 
-  async function confirmInstallment(extraData) {
-    await addDoc(collection(db, "families", FAMILY_ID, "expenses"), {
-      text: pendingText,
-      amount:
-        -extraData.installments.total *
-        extraData.installments.value,
-      type: "expense",
-      installments: extraData.installments,
-      createdAt: serverTimestamp(),
-      user: user.email,
-    });
+  // 🟣 CRÉDITO (à vista ou parcelado)
+  if (paymentMethod === "credit") {
+    const parsed = parseInstallment(text);
 
-    setShowInstallmentModal(false);
-    setInstallmentData(null);
-    setPendingText("");
+    const data = parsed ?? {
+      total: 1,
+      installmentValue: (() => {
+        const match = text.match(/(\d+([.,]\d+)?)/);
+        if (!match) return 0;
+        return Number(match[1].replace(",", "."));
+      })(),
+      startMonth: new Date().getMonth(),
+      startYear: new Date().getFullYear(),
+    };
+
+    setPendingText(text);
+    setInstallmentData(data);
+    setShowInstallmentModal(true);
+    setText("");
+    return;
   }
 
-  async function sendEmoji(emoji) {
-    await addDoc(collection(db, "families", FAMILY_ID, "expenses"), {
-      type: "emoji",
-      emoji,
-      user: user.email,
-      createdAt: serverTimestamp(),
-    });
-    setShowEmojiPicker(false);
+  // 💼 carteira / 💳 débito
+  await saveExpense(text);
+  setText("");
+}
+
+// 🔹 CONFIRMA CRÉDITO
+async function confirmInstallment(extraData) {
+  if (!selectedCardId) {
+    alert("Selecione um cartão");
+    return;
   }
 
-  /* ================= UI ================= */
+  await addDoc(collection(db, "families", FAMILY_ID, "expenses"), {
+    text: pendingText,
+    amount: 0, // ❗ crédito não entra no saldo
+    type: "expense",
+    category: "Outros",
+    paymentMethod: "credit",
+    cardId: selectedCardId,
 
-  return (
-    <>
-      <div style={styles.container}>
-        <header style={styles.header}>
-          <strong>FinChat Family</strong>
-          <div style={styles.headerActions}>
-            <button onClick={() => setShowFilters(true)}>🔍</button>
-            <button onClick={() => setShowCategories(true)}>🗂️</button>
-            <button onClick={goInstallments}>💳</button>
-            <button onClick={goReport}>📊</button>
-            <button onClick={goSettings}>⚙️</button>
-            <button onClick={() => signOut(auth)}>Sair</button>
-          </div>
-        </header>
+    // 🔴 ESSENCIAL PARA APARECER NO 💳
+    installments: {
+      total: extraData.total,
+      value: extraData.installmentValue,
+      startMonth: extraData.startMonth,
+      startYear: extraData.startYear,
+    },
 
-        <div style={styles.chat}>
-          {expenses.map((e) => (
-            <div
-              key={e.id}
-              style={{
-                ...styles.bubble,
-                alignSelf:
-                  e.user === user.email ? "flex-end" : "flex-start",
-              }}
-            >
-              {e.type === "emoji" ? (
-                <div style={{ fontSize: 28 }}>{e.emoji}</div>
-              ) : (
-                <>
-                  <div>{e.text}</div>
-                  <strong>R$ {Math.abs(e.amount).toFixed(2)}</strong>
+    createdAt: serverTimestamp(),
+    user: user.email,
+  });
 
-                  {e.installments && (
-                    <InstallmentBubble expense={e} />
-                  )}
+  setShowInstallmentModal(false);
+  setInstallmentData(null);
+  setPendingText("");
+  setSelectedCardId(null);
+}
 
-                  <button
-                    style={styles.editButton}
-                    onClick={() => setEditExpense(e)}
-                  >
-                    ✏️
-                  </button>
-                </>
-              )}
-            </div>
-          ))}
-          <div ref={bottomRef} />
+
+// 🔹 EMOJI
+async function sendEmoji(emoji) {
+  await addDoc(collection(db, "families", FAMILY_ID, "expenses"), {
+    type: "emoji",
+    emoji,
+    user: user.email,
+    createdAt: serverTimestamp(),
+  });
+  setShowEmojiPicker(false);
+}
+
+/* ================= UI ================= */
+
+return (
+  <>
+    <div style={styles.container}>
+      <header style={styles.header}>
+        <div style={{ display: "flex", flexDirection: "column" }}>
+  <strong>FinChat Family</strong>
+  <span style={{ fontSize: 11, opacity: 0.7 }}>
+    v{APP_VERSION}
+  </span>
+</div>
+
+        <div style={styles.headerActions}>
+          <button onClick={() => setShowFilters(true)}>🔍</button>
+          <button onClick={() => setShowCategories(true)}>🗂️</button>
+          <button onClick={goInstallments}>💳</button>
+          <button onClick={goReport}>📊</button>
+          <button onClick={goSettings}>⚙️</button>
+          <button onClick={() => signOut(auth)}>Sair</button>
         </div>
+      </header>
 
-        <form onSubmit={sendExpense} style={styles.inputBar}>
-          <span
-            style={styles.iconButton}
-            onClick={() => setShowEmojiPicker(true)}
-          >
-            😊
-          </span>
-
-          <input
-            style={styles.textInput}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder="Digite um gasto ou ganho..."
-          />
-
-          <button
-            type="submit"
-            style={styles.sendButton}
-            disabled={!text.trim()}
-          >
-            ➤
-          </button>
-        </form>
+      <div style={styles.balance}>
+        Saldo atual:{" "}
+        <strong style={{ color: balance >= 0 ? "green" : "red" }}>
+          R$ {balance.toFixed(2)}
+        </strong>
       </div>
 
-      {showEmojiPicker && (
-        <EmojiPicker
-          onSelect={sendEmoji}
-          onClose={() => setShowEmojiPicker(false)}
+      <div style={styles.chat}>
+        {filtered.map((e) => (
+          <div
+            key={e.id}
+            style={{
+              ...styles.bubble,
+              alignSelf:
+                e.user === user.email ? "flex-end" : "flex-start",
+            }}
+          >
+            {e.type === "emoji" ? (
+              <div style={{ fontSize: 28 }}>{e.emoji}</div>
+            ) : (
+              <>
+                {e.category && (
+                  <div style={styles.categoryLabel}>{e.category}</div>
+                )}
+                <div>{e.text}</div>
+                <strong>R$ {Math.abs(e.amount).toFixed(2)}</strong>
+{(e.paymentMethod === "credit" || e.paymentMethod === "debit") &&
+  e.cardId && (
+    <div
+      style={{
+        fontSize: 12,
+        opacity: 0.7,
+        marginTop: 2,
+      }}
+    >
+      💳{" "}
+      {cards.find((c) => c.id === e.cardId)?.name ||
+        "Cartão"}
+    </div>
+  )}
+
+                {e.installments && (
+                  <InstallmentBubble expense={e} />
+                )}
+
+                <button
+                  style={styles.editButton}
+                  onClick={() => setEditExpense(e)}
+                >
+                  ✏️
+                </button>
+              </>
+            )}
+          </div>
+        ))}
+        <div ref={bottomRef} />
+      </div>
+<PaymentBar
+  visible={!isIncomeText && text.trim().length > 0}
+  paymentMethod={paymentMethod}
+  setPaymentMethod={(method) => {
+    setPaymentMethod(method);
+    setSelectedCardId(null);
+
+    if (method === "debit" || method === "credit") {
+      setShowCardSelect(true);
+    }
+  }}
+/>
+
+
+
+      <form onSubmit={sendExpense} style={styles.inputBar}>
+        <span
+          style={styles.iconButton}
+          onClick={() => setShowEmojiPicker(true)}
+        >
+          😊
+        </span>
+
+        <input
+          style={styles.textInput}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Digite um gasto ou ganho..."
         />
-      )}
 
-      {editExpense && (
-        <EditExpenseModal
-          expense={editExpense}
-          FAMILY_ID={FAMILY_ID}
-          onClose={() => setEditExpense(null)}
-        />
-      )}
+        <button
+          type="submit"
+          style={styles.sendButton}
+          disabled={!text.trim()}
+        >
+          ➤
+        </button>
+      </form>
+    </div>
 
-      {showFilters && (
-        <FiltersModal onClose={() => setShowFilters(false)} />
-      )}
+    {showEmojiPicker && (
+      <EmojiPicker
+        onSelect={sendEmoji}
+        onClose={() => setShowEmojiPicker(false)}
+      />
+    )}
 
-      {showCategories && (
-        <CategoryModal onClose={() => setShowCategories(false)} />
-      )}
+    {editExpense && (
+      <EditExpenseModal
+        expense={editExpense}
+        FAMILY_ID={FAMILY_ID}
+        categories={categories}
+        onClose={() => setEditExpense(null)}
+      />
+    )}
 
-      {showInstallmentModal && installmentData && (
-        <InstallmentModal
-          data={installmentData}
-          onConfirm={confirmInstallment}
-          onCancel={() => setShowInstallmentModal(false)}
-        />
-      )}
-    </>
-  );
+    {showFilters && (
+      <FiltersModal
+        month={month}
+        setMonth={setMonth}
+        year={year}
+        setYear={setYear}
+        MONTHS={MONTHS}
+        typeFilter={typeFilter}
+        setTypeFilter={setTypeFilter}
+        onClose={() => setShowFilters(false)}
+      />
+    )}
+
+    {showCategories && (
+      <CategoryModal
+        db={db}
+        FAMILY_ID={FAMILY_ID}
+        categories={categories}
+        expenses={expenses}
+        newCategory={newCategory}
+        setNewCategory={setNewCategory}
+        onClose={() => setShowCategories(false)}
+        onSelectCategory={(category) => {
+          setSelectedCategory(category);
+          setShowCategories(false);
+          setShowCategoryDetails(true);
+        }}
+      />
+    )}
+
+    {showCategoryDetails && selectedCategory && (
+      <CategoryDetailsModal
+        category={selectedCategory}
+        expenses={expenses}
+        month={month}
+        year={year}
+        limits={CATEGORY_LIMITS}
+        onClose={() => {
+          setShowCategoryDetails(false);
+          setSelectedCategory(null);
+        }}
+      />
+    )}
+
+    {showInstallmentModal && installmentData && (
+      <InstallmentModal
+        data={installmentData}
+        cards={cards}
+        selectedCardId={selectedCardId}
+        setSelectedCardId={setSelectedCardId}
+        onConfirm={confirmInstallment}
+        onCancel={() => setShowInstallmentModal(false)}
+      />
+    )}
+{showCardSelect && (paymentMethod === "debit" || paymentMethod === "credit") && (
+  <CardSelectModal
+    cards={cards}
+    paymentMethod={paymentMethod}
+    onSelect={(cardId) => {
+      setSelectedCardId(cardId);
+      setShowCardSelect(false);
+    }}
+    onCancel={() => {
+      setShowCardSelect(false);
+      setPaymentMethod("cash");
+      setSelectedCardId(null);
+    }}
+  />
+)}
+
+  </>
+);
 }
 
 /* ================= STYLES ================= */
 
 const styles = {
   container: {
-    height: "100vh",
+    height: "100dvh", // ✅ corrige iOS (barra do Safari)
     display: "flex",
     flexDirection: "column",
   },
+
   header: {
     background: "#075E54",
     color: "#fff",
@@ -251,7 +552,18 @@ const styles = {
     display: "flex",
     justifyContent: "space-between",
   },
-  headerActions: { display: "flex", gap: 6 },
+
+  headerActions: {
+    display: "flex",
+    gap: 6,
+  },
+
+  balance: {
+    padding: 8,
+    textAlign: "center",
+    background: "#f1f8e9",
+  },
+
   chat: {
     flex: 1,
     padding: 10,
@@ -259,14 +571,23 @@ const styles = {
     display: "flex",
     flexDirection: "column",
     gap: 8,
+    WebkitOverflowScrolling: "touch", // ✅ scroll suave no iPhone
   },
+
   bubble: {
-    maxWidth: "70%",
+    maxWidth: "75%",
     padding: "8px 12px",
-    borderRadius: 12,
+    borderRadius: 14,
     background: "#DCF8C6",
     position: "relative",
   },
+
+  categoryLabel: {
+    fontSize: 12,
+    opacity: 0.7,
+    marginBottom: 2,
+  },
+
   editButton: {
     position: "absolute",
     bottom: 4,
@@ -275,23 +596,30 @@ const styles = {
     background: "transparent",
     cursor: "pointer",
   },
+
   inputBar: {
     display: "flex",
     alignItems: "center",
     padding: 8,
     borderTop: "1px solid #ddd",
+    position: "sticky", // ✅ mantém fixo no iOS
+    bottom: 0,
+    background: "#fff",
   },
+
   iconButton: {
     fontSize: 22,
     marginRight: 8,
     cursor: "pointer",
   },
+
   textInput: {
     flex: 1,
     padding: 10,
     borderRadius: 20,
     border: "1px solid #ccc",
   },
+
   sendButton: {
     marginLeft: 8,
     fontSize: 20,
@@ -301,6 +629,23 @@ const styles = {
     borderRadius: "50%",
     width: 40,
     height: 40,
+    cursor: "pointer",
+  },
+
+  paymentBar: {
+    display: "flex",
+    gap: 6,
+    padding: "6px 8px",
+    borderTop: "1px solid #ddd",
+    background: "#fafafa",
+  },
+
+  paymentButton: {
+    flex: 1,
+    border: "none",
+    borderRadius: 6,
+    padding: "6px 0",
+    fontSize: 13,
     cursor: "pointer",
   },
 };

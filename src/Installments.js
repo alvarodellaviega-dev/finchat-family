@@ -1,10 +1,11 @@
 // FinChat Family
 // File: Installments.js
-// Version: 1.5.4
-// Scope: Painel claro de parcelamentos ativos (somente leitura)
-// ⚠️ NÃO altera Firestore
-// ⚠️ NÃO altera Home.js
-// ⚠️ NÃO altera saldo
+// Version: 2.0.2-final
+// Scope: Painel de parcelamentos ativos (leitura)
+// ✔ compatível com dados antigos e novos
+// ✔ mostra nome do cartão
+// ❌ NÃO altera Firestore
+// ❌ NÃO altera saldo
 
 import { useEffect, useState } from "react";
 import {
@@ -18,9 +19,7 @@ import {
 const db = getFirestore();
 const FAMILY_ID = "finchat-family-main";
 
-/**
- * Diferença em meses entre duas datas
- */
+/* diferença em meses */
 function diffMonths(from, to) {
   return (
     to.getFullYear() * 12 +
@@ -29,16 +28,25 @@ function diffMonths(from, to) {
   );
 }
 
-/**
- * Formata MM/YYYY
- */
 function formatRef(month, year) {
   return `${String(month + 1).padStart(2, "0")}/${year}`;
 }
 
 export default function Installments({ goBack }) {
   const [items, setItems] = useState([]);
+  const [cards, setCards] = useState([]);
 
+  /* ================= CARDS ================= */
+  useEffect(() => {
+    return onSnapshot(
+      collection(db, "families", FAMILY_ID, "cards"),
+      (snap) => {
+        setCards(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      }
+    );
+  }, []);
+
+  /* ================= PARCELAMENTOS ================= */
   useEffect(() => {
     const q = query(
       collection(db, "families", FAMILY_ID, "expenses"),
@@ -50,15 +58,23 @@ export default function Installments({ goBack }) {
 
       const data = snap.docs
         .map((d) => ({ id: d.id, ...d.data() }))
-        .filter(
-          (e) =>
-            e.paymentType === "credito" &&
+
+        /* 🔑 filtro compatível (novo + legado) */
+        .filter((e) => {
+          const isCredit =
+            e.paymentMethod === "credit" ||
+            e.paymentType === "credito"; // legado
+
+          return (
+            isCredit &&
             e.installments &&
-            e.installments.total > 1 &&
+            typeof e.installments.total === "number" &&
             e.installments.startMonth != null &&
             e.installments.startYear != null &&
             e.createdAt
-        )
+          );
+        })
+
         .map((e) => {
           const start = new Date(
             e.installments.startYear,
@@ -66,13 +82,9 @@ export default function Installments({ goBack }) {
             1
           );
 
-          const current =
-            diffMonths(start, today) + 1;
+          const current = diffMonths(start, today) + 1;
 
-          // ❌ futura
           if (current < 1) return null;
-
-          // ❌ encerrada
           if (current > e.installments.total) return null;
 
           const refMonth =
@@ -84,22 +96,28 @@ export default function Installments({ goBack }) {
                 Math.floor(refMonth / 12)
               : e.installments.startYear;
 
+          const cardName =
+            cards.find((c) => c.id === e.cardId)?.name ||
+            "Cartão";
+
           return {
             id: e.id,
             text: e.text,
-            card: e.installments.card || "Cartão",
+            card: cardName,
             current,
             total: e.installments.total,
-            value: e.installments.value,
+            value: Number(e.installments.value) || 0,
             ref: formatRef(refMonth % 12, refYear),
-            amount: Math.abs(e.amount),
+            amount:
+              Math.abs(Number(e.installments.value) || 0) *
+              e.installments.total,
           };
         })
         .filter(Boolean);
 
       setItems(data);
     });
-  }, []);
+  }, [cards]);
 
   return (
     <div style={styles.container}>
@@ -110,7 +128,7 @@ export default function Installments({ goBack }) {
 
       {items.length === 0 && (
         <p style={styles.empty}>
-          Nenhum parcelamento ativo no momento.
+          Nenhum parcelamento ativo.
         </p>
       )}
 
@@ -120,8 +138,12 @@ export default function Installments({ goBack }) {
 
           <div style={styles.row}>
             <span>💳 {e.card}</span>
+          </div>
+
+          <div style={styles.row}>
+            <span>Parcelas</span>
             <span>
-              ({e.current}/{e.total})
+              {e.current}/{e.total}
             </span>
           </div>
 
@@ -132,9 +154,7 @@ export default function Installments({ goBack }) {
 
           <div style={styles.row}>
             <span>Parcela:</span>
-            <strong>
-              R$ {e.value.toFixed(2)}
-            </strong>
+            <strong>R$ {e.value.toFixed(2)}</strong>
           </div>
 
           <div style={styles.total}>
@@ -157,7 +177,6 @@ const styles = {
   header: {
     display: "flex",
     justifyContent: "space-between",
-    alignItems: "center",
     marginBottom: 12,
   },
   empty: {
@@ -176,7 +195,6 @@ const styles = {
   },
   title: {
     fontWeight: "bold",
-    marginBottom: 4,
   },
   row: {
     display: "flex",
@@ -184,7 +202,6 @@ const styles = {
     fontSize: 14,
   },
   total: {
-    marginTop: 6,
     fontSize: 13,
     opacity: 0.75,
   },

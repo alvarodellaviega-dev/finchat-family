@@ -1,12 +1,31 @@
 // FinChat Family
-// Version: 1.6.2
+// Version: 1.7.1
 // File: CategoryDetailsModal.js
 // Scope: Modal isolado para exibir lançamentos por categoria no mês
 // ⚠️ NÃO acessa Firestore
 // ⚠️ NÃO altera estado global
-// ⚠️ Apenas leitura via props
+// ⚠️ Compatível com dados antigos e novos
 
-import { calculateMonthlyImpact } from "../utils/calculateMonthlyImpact";
+/* ================= UTIL ================= */
+
+function normalizeCategory(name) {
+  return (name || "Outros")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/–/g, "-")
+    .trim();
+}
+
+function diffMonths(from, to) {
+  return (
+    to.getFullYear() * 12 +
+    to.getMonth() -
+    (from.getFullYear() * 12 + from.getMonth())
+  );
+}
+
+/* ================= COMPONENT ================= */
 
 export default function CategoryDetailsModal({
   category,
@@ -16,31 +35,61 @@ export default function CategoryDetailsModal({
   limits,
   onClose,
 }) {
-  // 🔒 Regra oficial:
-  // - Apenas SAÍDAS
-  // - Apenas categoria selecionada
-  // - Apenas mês/ano atual
- const items = expenses.filter((e) => {
-  if (!e.createdAt) return false;
-  if (!e.category) return false;
-  if (e.category !== category) return false;
+  const targetCategory = normalizeCategory(category);
 
-  const d = e.createdAt.toDate();
-  return d.getMonth() === month && d.getFullYear() === year;
-});
+  const items = expenses.filter((e) => {
+    if (!e.createdAt?.toDate) return false;
 
+    // ❌ nunca entradas
+    if (e.type === "income" || e.paymentMethod === "income")
+      return false;
 
-  const total = items.reduce(
-    (sum, e) => sum + calculateMonthlyImpact(e, month, year),
-    0
-  );
+    const expenseCategory = normalizeCategory(e.category);
+    if (expenseCategory !== targetCategory)
+      return false;
 
-  const absoluteTotal = Math.abs(total);
+    // 💳 crédito
+    if (e.paymentMethod === "credit" && e.installments) {
+      const start = new Date(
+        e.installments.startYear,
+        e.installments.startMonth,
+        1
+      );
+
+      const current = diffMonths(
+        start,
+        new Date(year, month, 1)
+      ) + 1;
+
+      return (
+        current >= 1 &&
+        current <= e.installments.total
+      );
+    }
+
+    // 💸 débito / dinheiro
+    const d = e.createdAt.toDate();
+    return (
+      d.getMonth() === month &&
+      d.getFullYear() === year
+    );
+  });
+
+  const total = items.reduce((sum, e) => {
+    if (
+      e.paymentMethod === "credit" &&
+      e.installments?.value
+    ) {
+      return sum + Number(e.installments.value);
+    }
+
+    return sum + Math.abs(Number(e.amount) || 0);
+  }, 0);
+
   const limit = limits?.[category];
-
-  const isExceeded = limit && absoluteTotal > limit;
+  const isExceeded = limit && total > limit;
   const isWarning =
-    limit && absoluteTotal >= limit * 0.8 && !isExceeded;
+    limit && total >= limit * 0.8 && !isExceeded;
 
   const monthLabel = String(month + 1).padStart(2, "0");
 
@@ -74,7 +123,7 @@ export default function CategoryDetailsModal({
               : "✅ Dentro do limite"}
 
             <div style={styles.alertSub}>
-              R$ {absoluteTotal.toFixed(2)} / R$ {limit.toFixed(2)}
+              R$ {total.toFixed(2)} / R$ {limit.toFixed(2)}
             </div>
           </div>
         )}
@@ -92,9 +141,13 @@ export default function CategoryDetailsModal({
               <span>{e.text}</span>
               <strong>
                 R${" "}
-                {Math.abs(
-                  calculateMonthlyImpact(e, month, year)
-                ).toFixed(2)}
+                {e.paymentMethod === "credit"
+                  ? Number(
+                      e.installments?.value || 0
+                    ).toFixed(2)
+                  : Math.abs(
+                      Number(e.amount) || 0
+                    ).toFixed(2)}
               </strong>
             </div>
           ))}
@@ -103,9 +156,7 @@ export default function CategoryDetailsModal({
         {/* TOTAL */}
         <div style={styles.total}>
           Total do mês:{" "}
-          <strong>
-            R$ {absoluteTotal.toFixed(2)}
-          </strong>
+          <strong>R$ {total.toFixed(2)}</strong>
         </div>
 
         <button style={styles.close} onClick={onClose}>
@@ -128,7 +179,6 @@ const styles = {
     justifyContent: "center",
     zIndex: 9999,
   },
-
   modal: {
     background: "#fff",
     padding: 20,
@@ -139,40 +189,33 @@ const styles = {
     flexDirection: "column",
     gap: 12,
   },
-
   header: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
   },
-
   alert: {
     padding: 10,
     borderRadius: 8,
     fontWeight: "bold",
   },
-
   alertSub: {
     fontSize: 13,
     marginTop: 4,
     fontWeight: "normal",
   },
-
   alertOk: {
     background: "#e6f7ee",
     color: "#1b7f4b",
   },
-
   alertWarning: {
     background: "#fff7e6",
     color: "#9a6b00",
   },
-
   alertDanger: {
     background: "#fdecea",
     color: "#b00020",
   },
-
   list: {
     display: "flex",
     flexDirection: "column",
@@ -180,7 +223,6 @@ const styles = {
     maxHeight: 260,
     overflowY: "auto",
   },
-
   item: {
     display: "flex",
     justifyContent: "space-between",
@@ -188,18 +230,15 @@ const styles = {
     borderBottom: "1px solid #eee",
     paddingBottom: 4,
   },
-
   empty: {
     fontSize: 14,
     color: "#777",
   },
-
   total: {
     borderTop: "1px solid #ddd",
     paddingTop: 8,
     fontSize: 15,
   },
-
   close: {
     marginTop: 6,
     background: "#25D366",

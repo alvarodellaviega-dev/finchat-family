@@ -1,7 +1,7 @@
 // FinChat Family
-// Version: 1.6.2
+// Version: 2.0.0-stable
 // File: Settings.js
-// Scope: Configurações + idioma global
+// Scope: Configurações + idioma global + gestão de cartões
 
 import { useEffect, useState } from "react";
 import { auth } from "./firebase";
@@ -14,7 +14,11 @@ import {
   getDocs,
   deleteDoc,
   query,
+  onSnapshot,
 } from "firebase/firestore";
+
+// 🔧 Gestão de Cartões
+import CardManager from "./components/CardManager";
 
 const db = getFirestore();
 const FAMILY_ID = "finchat-family-main";
@@ -26,6 +30,9 @@ export default function Settings({ goBack, setGlobalLanguage }) {
     localStorage.getItem("language") || "pt"
   );
 
+  const [showCards, setShowCards] = useState(false);
+  const [cards, setCards] = useState([]);
+
   const userRef = doc(
     db,
     "families",
@@ -33,6 +40,8 @@ export default function Settings({ goBack, setGlobalLanguage }) {
     "users",
     user.uid
   );
+
+  /* ================= PREFS ================= */
 
   useEffect(() => {
     async function loadPrefs() {
@@ -53,6 +62,23 @@ export default function Settings({ goBack, setGlobalLanguage }) {
       setGlobalLanguage(lang);
     }
   }
+
+  /* ================= CARDS ================= */
+
+  useEffect(() => {
+    if (!showCards) return;
+
+    return onSnapshot(
+      collection(db, "families", FAMILY_ID, "cards"),
+      (snap) => {
+        setCards(
+          snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+        );
+      }
+    );
+  }, [showCards]);
+
+  /* ================= DADOS ================= */
 
   async function clearHistory() {
     const ok = window.confirm(
@@ -75,6 +101,8 @@ export default function Settings({ goBack, setGlobalLanguage }) {
 
     alert("Histórico apagado.");
   }
+
+  /* ================= UI ================= */
 
   return (
     <div style={{ padding: 20 }}>
@@ -100,12 +128,28 @@ export default function Settings({ goBack, setGlobalLanguage }) {
       </section>
 
       <section style={{ marginTop: 30 }}>
-        <h3>Dados</h3>
+        <h3>Cartões</h3>
+        <button onClick={() => setShowCards(true)}>
+          💳 Gestão de Cartões
+        </button>
+      </section>
 
+      <section style={{ marginTop: 30 }}>
+        <h3>Dados</h3>
         <button onClick={clearHistory}>
           🗑️ Limpar histórico
         </button>
       </section>
+
+      {/* MODAL DE CARTÕES */}
+      {showCards && (
+        <CardManager
+          db={db}
+          FAMILY_ID={FAMILY_ID}
+          cards={cards}
+          onClose={() => setShowCards(false)}
+        />
+      )}
     </div>
   );
 }

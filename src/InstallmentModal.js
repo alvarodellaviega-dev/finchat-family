@@ -1,34 +1,39 @@
 import { useState } from "react";
 
 const MONTHS = [
-  "Janeiro",
-  "Fevereiro",
-  "Março",
-  "Abril",
-  "Maio",
-  "Junho",
-  "Julho",
-  "Agosto",
-  "Setembro",
-  "Outubro",
-  "Novembro",
-  "Dezembro",
+  "Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+  "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro",
 ];
 
 export default function InstallmentModal({
   data,
+  cards,
+  selectedCardId,
+  setSelectedCardId,
   onConfirm,
   onCancel,
 }) {
   const now = new Date();
 
-  const [card, setCard] = useState(data.card || "");
   const [month, setMonth] = useState(
     data.startMonth ?? now.getMonth()
   );
   const [year, setYear] = useState(
     data.startYear ?? now.getFullYear()
   );
+
+  // 🔍 apenas cartões com crédito ativo
+  const creditCards = cards.filter((c) => {
+    if (!c.ativo) return false;
+
+    // cartões antigos
+    if (!c.funcoes) {
+      return c.tipo === "credito";
+    }
+
+    // cartões novos / híbridos
+    return c.funcoes.credito;
+  });
 
   const years = [];
   for (let i = 0; i <= 5; i++) {
@@ -38,29 +43,33 @@ export default function InstallmentModal({
   return (
     <div style={styles.overlay}>
       <div style={styles.modal}>
-        <h3>Parcelamento</h3>
+        <h3>Confirmação de crédito</h3>
 
         {/* INFO */}
         <div style={styles.block}>
           <div>Total de parcelas: {data.total}x</div>
           <div>
-            Valor total: R${" "}
-            {data.amount.toFixed(2)}
+            Valor da parcela: R$ {data.installmentValue.toFixed(2)}
           </div>
           <div>
-            Valor da parcela: R${" "}
-            {data.installmentValue.toFixed(2)}
+            Valor total: R$ {(data.total * data.installmentValue).toFixed(2)}
           </div>
         </div>
 
         {/* CARTÃO */}
         <label style={styles.label}>
-          Cartão
-          <input
-            value={card}
-            onChange={(e) => setCard(e.target.value)}
-            placeholder="Ex: Nubank"
-          />
+          Cartão de crédito
+          <select
+            value={selectedCardId || ""}
+            onChange={(e) => setSelectedCardId(e.target.value)}
+          >
+            <option value="">Selecione um cartão</option>
+            {creditCards.map((card) => (
+              <option key={card.id} value={card.id}>
+                {card.nome}
+              </option>
+            ))}
+          </select>
         </label>
 
         {/* DATA */}
@@ -102,27 +111,21 @@ export default function InstallmentModal({
         <div style={styles.actions}>
           <button
             style={styles.confirm}
+            disabled={!selectedCardId}
             onClick={() =>
               onConfirm({
-                paymentType: "credito",
-                installments: {
-                  total: data.total,
-                  value: data.installmentValue,
-                  startMonth: month,
-                  startYear: year,
-                  card,
-                },
+                total: data.total,
+                installmentValue: data.installmentValue,
+                startMonth: month,
+                startYear: year,
               })
             }
           >
-            Confirmar parcelamento
+            Confirmar crédito
           </button>
 
-          <button
-            style={styles.cancel}
-            onClick={onCancel}
-          >
-            Salvar como gasto normal
+          <button style={styles.cancel} onClick={onCancel}>
+            Cancelar
           </button>
         </div>
       </div>
@@ -191,3 +194,4 @@ const styles = {
     cursor: "pointer",
   },
 };
+
