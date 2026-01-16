@@ -39,6 +39,14 @@ const MONTHS = [
   "Janeiro","Fevereiro","Março","Abril","Maio","Junho",
   "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro",
 ];
+function formatTime(date) {
+  if (!date) return "";
+  const d = new Date(date);
+  return d.toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 const CATEGORY_LIMITS = {
   Mercado: 800,
@@ -398,6 +406,12 @@ return (
           <div>{e.text}</div>
 
           <strong>R$ {Math.abs(e.amount).toFixed(2)}</strong>
+          {e.createdAt?.toDate && (
+  <div style={styles.time}>
+    {formatTime(e.createdAt.toDate())}
+  </div>
+)}
+
 
           {(e.paymentMethod === "credit" ||
             e.paymentMethod === "debit") &&
@@ -572,6 +586,13 @@ const styles = {
     display: "flex",
     flexDirection: "column",
   },
+  time: {
+  fontSize: 11,
+  color: "#777",
+  textAlign: "right",
+  marginTop: 2,
+},
+
 
   header: {
     background: "#075E54",
