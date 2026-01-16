@@ -351,11 +351,11 @@ return (
     <div style={styles.container}>
       <header style={styles.header}>
         <div style={{ display: "flex", flexDirection: "column" }}>
-  <strong>FinChat Family</strong>
-  <span style={{ fontSize: 11, opacity: 0.7 }}>
-    v{APP_VERSION}
-  </span>
-</div>
+          <strong>FinChat Family</strong>
+          <span style={{ fontSize: 11, opacity: 0.7 }}>
+            v{APP_VERSION}
+          </span>
+        </div>
 
         <div style={styles.headerActions}>
           <button onClick={() => setShowFilters(true)}>🔍</button>
@@ -374,70 +374,77 @@ return (
         </strong>
       </div>
 
-      <div style={styles.chat}>
-        {filtered.map((e) => (
-          <div
-            key={e.id}
-            style={{
-              ...styles.bubble,
-              alignSelf:
-                e.user === user.email ? "flex-end" : "flex-start",
-            }}
-          >
-            {e.type === "emoji" ? (
-              <div style={{ fontSize: 28 }}>{e.emoji}</div>
-            ) : (
-              <>
-                {e.category && (
-                  <div style={styles.categoryLabel}>{e.category}</div>
-                )}
-                <div>{e.text}</div>
-                <strong>R$ {Math.abs(e.amount).toFixed(2)}</strong>
-{(e.paymentMethod === "credit" || e.paymentMethod === "debit") &&
-  e.cardId && (
+      {/* CHAT */}
+      {/* CHAT */}
+<div style={styles.chat}>
+  {filtered.map((e) => (
     <div
+      key={e.id}
       style={{
-        fontSize: 12,
-        opacity: 0.7,
-        marginTop: 2,
+        ...styles.bubble,
+        ...(e.user === user.email
+          ? styles.bubbleMe
+          : styles.bubbleOther),
       }}
     >
-      💳{" "}
-      {cards.find((c) => c.id === e.cardId)?.name ||
-        "Cartão"}
-    </div>
-  )}
+      {e.type === "emoji" ? (
+        <div style={{ fontSize: 28 }}>{e.emoji}</div>
+      ) : (
+        <>
+          {e.category && (
+            <div style={styles.categoryLabel}>{e.category}</div>
+          )}
 
-                {e.installments && (
-                  <InstallmentBubble expense={e} />
-                )}
+          <div>{e.text}</div>
 
-                <button
-                  style={styles.editButton}
-                  onClick={() => setEditExpense(e)}
-                >
-                  ✏️
-                </button>
-              </>
+          <strong>R$ {Math.abs(e.amount).toFixed(2)}</strong>
+
+          {(e.paymentMethod === "credit" ||
+            e.paymentMethod === "debit") &&
+            e.cardId && (
+              <div
+                style={{
+                  fontSize: 12,
+                  opacity: 0.7,
+                  marginTop: 2,
+                }}
+              >
+                💳{" "}
+                {cards.find((c) => c.id === e.cardId)?.name ||
+                  "Cartão"}
+              </div>
             )}
-          </div>
-        ))}
-        <div ref={bottomRef} />
-      </div>
-<PaymentBar
-  visible={!isIncomeText && text.trim().length > 0}
-  paymentMethod={paymentMethod}
-  setPaymentMethod={(method) => {
-    setPaymentMethod(method);
-    setSelectedCardId(null);
 
-    if (method === "debit" || method === "credit") {
-      setShowCardSelect(true);
-    }
-  }}
-/>
+          {e.installments && (
+            <InstallmentBubble expense={e} />
+          )}
+
+          <button
+            style={styles.editButton}
+            onClick={() => setEditExpense(e)}
+          >
+            ✏️
+          </button>
+        </>
+      )}
+    </div>
+  ))}
+  <div ref={bottomRef} />
+</div>
 
 
+      <PaymentBar
+        visible={!isIncomeText && text.trim().length > 0}
+        paymentMethod={paymentMethod}
+        setPaymentMethod={(method) => {
+          setPaymentMethod(method);
+          setSelectedCardId(null);
+
+          if (method === "debit" || method === "credit") {
+            setShowCardSelect(true);
+          }
+        }}
+      />
 
       <form onSubmit={sendExpense} style={styles.inputBar}>
         <span
@@ -534,25 +541,28 @@ return (
         onCancel={() => setShowInstallmentModal(false)}
       />
     )}
-{showCardSelect && (paymentMethod === "debit" || paymentMethod === "credit") && (
-  <CardSelectModal
-    cards={cards}
-    paymentMethod={paymentMethod}
-    onSelect={(cardId) => {
-      setSelectedCardId(cardId);
-      setShowCardSelect(false);
-    }}
-    onCancel={() => {
-      setShowCardSelect(false);
-      setPaymentMethod("cash");
-      setSelectedCardId(null);
-    }}
-  />
-)}
 
+    {showCardSelect &&
+      (paymentMethod === "debit" ||
+        paymentMethod === "credit") && (
+        <CardSelectModal
+          cards={cards}
+          paymentMethod={paymentMethod}
+          onSelect={(cardId) => {
+            setSelectedCardId(cardId);
+            setShowCardSelect(false);
+          }}
+          onCancel={() => {
+            setShowCardSelect(false);
+            setPaymentMethod("cash");
+            setSelectedCardId(null);
+          }}
+        />
+      )}
   </>
 );
 }
+
 
 /* ================= STYLES ================= */
 
@@ -590,14 +600,33 @@ const styles = {
     flexDirection: "column",
     gap: 8,
     WebkitOverflowScrolling: "touch", // ✅ scroll suave no iPhone
+    background: "#ECE5DD", // 🔹 fundo estilo WhatsApp
   },
+
+  /* ===== BOLHAS ===== */
 
   bubble: {
     maxWidth: "75%",
     padding: "8px 12px",
     borderRadius: 14,
-    background: "#DCF8C6",
     position: "relative",
+    fontSize: 14,
+    lineHeight: "18px",
+    wordBreak: "break-word",
+  },
+
+  bubbleMe: {
+    background: "#DCF8C6", // 🟢 verde WhatsApp
+    alignSelf: "flex-end",
+    borderTopRightRadius: 4,
+    boxShadow: "0 1px 1px rgba(0,0,0,0.12)",
+  },
+
+  bubbleOther: {
+    background: "#FFFFFF", // ⚪ branco (outra pessoa)
+    alignSelf: "flex-start",
+    borderTopLeftRadius: 4,
+    boxShadow: "0 1px 1px rgba(0,0,0,0.12)",
   },
 
   categoryLabel: {
@@ -613,7 +642,10 @@ const styles = {
     border: "none",
     background: "transparent",
     cursor: "pointer",
+    fontSize: 12,
   },
+
+  /* ===== INPUT ===== */
 
   inputBar: {
     display: "flex",
@@ -636,6 +668,7 @@ const styles = {
     padding: 10,
     borderRadius: 20,
     border: "1px solid #ccc",
+    fontSize: 14,
   },
 
   sendButton: {
@@ -649,6 +682,8 @@ const styles = {
     height: 40,
     cursor: "pointer",
   },
+
+  /* ===== PAYMENT BAR ===== */
 
   paymentBar: {
     display: "flex",
