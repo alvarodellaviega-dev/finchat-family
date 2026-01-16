@@ -405,7 +405,18 @@ return (
 
           <div>{e.text}</div>
 
-          <strong>R$ {Math.abs(e.amount).toFixed(2)}</strong>
+          <strong>
+  R${" "}
+  {e.paymentMethod === "credit" && e.installments
+    ? Number(e.installments.value * e.installments.total).toFixed(2)
+    : Math.abs(e.amount).toFixed(2)}
+</strong>
+{e.paymentMethod === "credit" && (
+  <div style={{ fontSize: 11, opacity: 0.6 }}>
+    crédito
+  </div>
+)}
+
           {e.createdAt?.toDate && (
   <div style={styles.time}>
     {formatTime(e.createdAt.toDate())}
