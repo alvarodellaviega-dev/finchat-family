@@ -375,80 +375,15 @@ return (
       </div>
 
       <div style={styles.chat}>
-  {filtered.map((e, index) => {
-    const current =
-      e.createdAt?.toDate &&
-      e.createdAt.toDate().toDateString();
-
-    const prev =
-      index > 0 &&
-      filtered[index - 1].createdAt?.toDate &&
-      filtered[index - 1].createdAt.toDate().toDateString();
-
-    const showDate = current !== prev;
-
-    return (
-      <div key={e.id}>
-        {showDate && e.createdAt?.toDate && (
-          <div style={styles.dateSeparator}>
-            {formatChatDate(e.createdAt.toDate())}
-          </div>
-        )}
-
-        <div
-          style={{
-            ...styles.bubble,
-            alignSelf:
-              e.user === user.email ? "flex-end" : "flex-start",
-          }}
-        >
-          {e.type === "emoji" ? (
-            <div style={{ fontSize: 28 }}>{e.emoji}</div>
-          ) : (
-            <>
-              {e.category && (
-                <div style={styles.categoryLabel}>
-                  {e.category}
-                </div>
-              )}
-              <div>{e.text}</div>
-              <strong>R$ {Math.abs(e.amount).toFixed(2)}</strong>
-
-              {(e.paymentMethod === "credit" ||
-                e.paymentMethod === "debit") &&
-                e.cardId && (
-                  <div
-                    style={{
-                      fontSize: 12,
-                      opacity: 0.7,
-                      marginTop: 2,
-                    }}
-                  >
-                    💳{" "}
-                    {cards.find((c) => c.id === e.cardId)
-                      ?.name || "Cartão"}
-                  </div>
-                )}
-
-              {e.installments && (
-                <InstallmentBubble expense={e} />
-              )}
-
-              <button
-                style={styles.editButton}
-                onClick={() => setEditExpense(e)}
-              >
-                ✏️
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-    );
-  })}
-  <div ref={bottomRef} />
-</div>
-
+        {filtered.map((e) => (
+          <div
+            key={e.id}
+            style={{
+              ...styles.bubble,
+              alignSelf:
+                e.user === user.email ? "flex-end" : "flex-start",
+            }}
+          >
             {e.type === "emoji" ? (
               <div style={{ fontSize: 28 }}>{e.emoji}</div>
             ) : (
@@ -656,14 +591,6 @@ const styles = {
     gap: 8,
     WebkitOverflowScrolling: "touch", // ✅ scroll suave no iPhone
   },
-dateSeparator: {
-  alignSelf: "center",
-  background: "#eaeaea",
-  padding: "4px 10px",
-  borderRadius: 10,
-  fontSize: 12,
-  margin: "12px 0 6px",
-},
 
   bubble: {
     maxWidth: "75%",
