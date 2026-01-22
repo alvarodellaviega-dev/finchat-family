@@ -1,3 +1,5 @@
+// src/hooks/useExpenses.js
+
 import { useEffect, useState, useRef } from "react";
 import {
   getFirestore,
@@ -16,7 +18,8 @@ import { auth } from "../firebase";
 const db = getFirestore();
 const FAMILY_ID = "finchat-family-main";
 
-/* 🔑 REGRAS */
+/* ================= REGRAS ================= */
+
 const INCOME_WORDS = [
   "ganhei",
   "recebi",
@@ -24,14 +27,15 @@ const INCOME_WORDS = [
   "fiz",
   "salario",
   "pagamento",
+  "pix",
 ];
 
-function detectEntryType(text) {
+function isIncome(text) {
   const t = text.toLowerCase();
-  return INCOME_WORDS.some((w) => t.includes(w))
-    ? "income"
-    : "expense";
+  return INCOME_WORDS.some((w) => t.includes(w));
 }
+
+/* ================= HOOK ================= */
 
 export function useExpenses() {
   const user = auth.currentUser;
@@ -40,8 +44,7 @@ export function useExpenses() {
   const [text, setText] = useState("");
   const [expenses, setExpenses] = useState([]);
   const [cards, setCards] = useState([]);
-  const [categories, setCategories] = useState([]);
-
+  const [categories, setCategories] = useState([]); // ✅ ESTAVA FALTANDO
   const [editExpense, setEditExpense] = useState(null);
 
   const [paymentMethod, setPaymentMethod] = useState("cash");
@@ -49,6 +52,7 @@ export function useExpenses() {
 
   /* ================= FIRESTORE ================= */
 
+  // EXPENSES
   useEffect(() => {
     if (!user) return;
 
@@ -58,7 +62,10 @@ export function useExpenses() {
         orderBy("createdAt", "asc")
       ),
       (snap) => {
-        setExpenses(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+        setExpenses(
+          snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+        );
+
         setTimeout(() => {
           bottomRef.current?.scrollIntoView({ behavior: "smooth" });
         }, 50);
@@ -66,16 +73,20 @@ export function useExpenses() {
     );
   }, [user]);
 
+  // CARDS
   useEffect(() => {
     if (!user) return;
 
     return onSnapshot(
       collection(db, "families", FAMILY_ID, "cards"),
       (snap) =>
-        setCards(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+        setCards(
+          snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+        )
     );
   }, [user]);
 
+  // ✅ CATEGORIES (ESTA ERA A FALHA)
   useEffect(() => {
     if (!user) return;
 
@@ -83,61 +94,107 @@ export function useExpenses() {
       collection(db, "families", FAMILY_ID, "categories"),
       (snap) =>
         setCategories(
-          snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+          snap.docs
+            .map((d) => ({ id: d.id, ...d.data() }))
+            .sort((a, b) =>
+              a.name.localeCompare(b.name, "pt-BR")
+            )
         )
     );
   }, [user]);
 
   /* ================= ACTIONS ================= */
 
-  // ✅ ENVIO DE EMOJI (ESTAVA FALTANDO)
   async function sendEmoji(emoji) {
-    if (!emoji) return;
-
-    await addDoc(collection(db, "families", FAMILY_ID, "expenses"), {
-      type: "emoji",
-      emoji,
-      user: user?.email,
-      createdAt: serverTimestamp(),
-    });
+    await addDoc(
+      collection(db, "families", FAMILY_ID, "expenses"),
+      {
+        type: "emoji",
+        emoji,
+        user: user.email,
+        createdAt: serverTimestamp(),
+      }
+    );
   }
 
   async function sendExpense({ installments = null } = {}) {
     if (!text.trim()) return;
 
-    const valueMatch = text.match(/(\d+([.,]\d+)?)/);
-    if (!valueMatch) return;
+    const match = text.match(/(\d+([.,]\d+)?)/);
+    if (!match) return;
 
-    const value = Number(valueMatch[1].replace(",", "."));
-    const entryType = detectEntryType(text);
+    const value = Number(match[1].replace(",", "."));
+    const income = isIncome(text);
 
-    if (
-      entryType === "expense" &&
-      paymentMethod === "credit" &&
-      !selectedCardId
-    ) {
+    // ENTRADA
+    if (income) {
+      await addDoc(
+        collection(db, "families", FAMILY_ID, "expenses"),
+        {
+          text: text.trim(),
+          amount: Math.abs(value),
+          entryType: "income",
+          category: null,
+          paymentMethod: null,
+          cardId: null,
+          installments: null,
+          user: user.email,
+          createdAt: serverTimestamp(),
+        }
+      );
+
+      setText("");
+      return;
+    }
+
+    // CRÉDITO
+    if (paymentMethod === "credit") {
+      if (!selectedCardId) {
+        alert("Selecione um cartão");
+        return;
+      }
+
+      await addDoc(
+        collection(db, "families", FAMILY_ID, "expenses"),
+        {
+          text: text.trim(),
+          amount: 0,
+          entryType: "expense",
+          category: "Outros",
+          paymentMethod: "credit",
+          cardId: selectedCardId,
+          installments,
+          user: user.email,
+          createdAt: serverTimestamp(),
+        }
+      );
+
+      setText("");
+      setPaymentMethod("cash");
+      setSelectedCardId(null);
+      return;
+    }
+
+    // CASH / DÉBITO
+    if (paymentMethod === "debit" && !selectedCardId) {
       alert("Selecione um cartão");
       return;
     }
 
-    await addDoc(collection(db, "families", FAMILY_ID, "expenses"), {
-      text: text.trim(),
-      amount:
-        entryType === "income"
-          ? Math.abs(value)
-          : -Math.abs(value),
-
-      entryType,
-      paymentMethod: entryType === "expense" ? paymentMethod : null,
-      cardId:
-        paymentMethod === "credit" || paymentMethod === "debit"
-          ? selectedCardId
-          : null,
-
-      installments,
-      user: user?.email,
-      createdAt: serverTimestamp(),
-    });
+    await addDoc(
+      collection(db, "families", FAMILY_ID, "expenses"),
+      {
+        text: text.trim(),
+        amount: -Math.abs(value),
+        entryType: "expense",
+        category: "Outros",
+        paymentMethod,
+        cardId: paymentMethod === "debit" ? selectedCardId : null,
+        installments: null,
+        user: user.email,
+        createdAt: serverTimestamp(),
+      }
+    );
 
     setText("");
     setPaymentMethod("cash");
@@ -162,15 +219,16 @@ export function useExpenses() {
   /* ================= BALANCE ================= */
 
   const balance = expenses.reduce((sum, e) => {
-    // ❌ crédito não entra direto no saldo
     if (e.paymentMethod === "credit") return sum;
     return sum + (Number(e.amount) || 0);
   }, 0);
 
+  /* ================= EXPORT ================= */
+
   return {
     expenses,
     cards,
-    categories,
+    categories, // ✅ AGORA EXISTE DE VERDADE
     balance,
 
     text,
@@ -182,12 +240,12 @@ export function useExpenses() {
     setSelectedCardId,
 
     sendExpense,
-    sendEmoji, // ✅ AGORA EXISTE
-    updateExpense,
-    deleteExpense,
+    sendEmoji,
 
     editExpense,
     setEditExpense,
+    updateExpense,
+    deleteExpense,
 
     bottomRef,
   };

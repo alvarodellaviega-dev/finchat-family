@@ -1,4 +1,3 @@
-// src/components/InstallmentModal.js
 import { useState } from "react";
 
 export default function InstallmentModal({
@@ -11,57 +10,74 @@ export default function InstallmentModal({
 }) {
   const [total, setTotal] = useState(data.total);
 
+  const installmentValue =
+    total > 0
+      ? data.installmentValue
+      : 0;
+
   return (
     <div style={overlay}>
       <div style={modal}>
-        <h3>Confirmação de crédito</h3>
+        <h3>💳 Confirmação de Crédito</h3>
 
-        <p>
-          Valor da parcela: <strong>R$ {data.installmentValue.toFixed(2)}</strong>
-        </p>
+        <div style={block}>
+          <span>Valor da parcela</span>
+          <strong>R$ {installmentValue.toFixed(2)}</strong>
+        </div>
 
-        <label>
-          Total de parcelas
+        <div style={block}>
+          <span>Total de parcelas</span>
           <input
             type="number"
             min="1"
             value={total}
-            onChange={(e) => setTotal(Number(e.target.value))}
+            onChange={(e) =>
+              setTotal(Math.max(1, Number(e.target.value)))
+            }
           />
-        </label>
+        </div>
 
-        <label>
-          Cartão
+        <div style={block}>
+          <span>Cartão</span>
           <select
             value={selectedCardId || ""}
             onChange={(e) => setSelectedCardId(e.target.value)}
           >
             <option value="">Selecione</option>
-            {cards.map(c => (
-              <option key={c.id} value={c.id}>{c.nome}</option>
+            {cards.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.nome}
+              </option>
             ))}
           </select>
-        </label>
+        </div>
 
-        <button
-          disabled={!selectedCardId}
-          onClick={() =>
-            onConfirm({
-              total,
-              installmentValue: data.installmentValue,
-              startMonth: data.startMonth,
-              startYear: data.startYear,
-            })
-          }
-        >
-          Confirmar
-        </button>
+        <div style={actions}>
+          <button onClick={onCancel} style={cancel}>
+            Cancelar
+          </button>
 
-        <button onClick={onCancel}>Cancelar</button>
+          <button
+            disabled={!selectedCardId}
+            style={confirm}
+            onClick={() =>
+              onConfirm({
+                total,
+                value: installmentValue,
+                startMonth: data.startMonth,
+                startYear: data.startYear,
+              })
+            }
+          >
+            Confirmar
+          </button>
+        </div>
       </div>
     </div>
   );
 }
+
+/* ================= STYLES ================= */
 
 const overlay = {
   position: "fixed",
@@ -70,11 +86,45 @@ const overlay = {
   display: "flex",
   alignItems: "center",
   justifyContent: "center",
+  zIndex: 9999,
 };
 
 const modal = {
   background: "#fff",
   padding: 20,
-  borderRadius: 12,
+  borderRadius: 14,
   width: 320,
+  display: "flex",
+  flexDirection: "column",
+  gap: 14,
+};
+
+const block = {
+  display: "flex",
+  justifyContent: "space-between",
+  alignItems: "center",
+  gap: 8,
+};
+
+const actions = {
+  display: "flex",
+  justifyContent: "space-between",
+  marginTop: 10,
+};
+
+const cancel = {
+  background: "#eee",
+  border: "none",
+  padding: "8px 12px",
+  borderRadius: 8,
+  cursor: "pointer",
+};
+
+const confirm = {
+  background: "#25D366",
+  color: "#fff",
+  border: "none",
+  padding: "8px 14px",
+  borderRadius: 8,
+  cursor: "pointer",
 };

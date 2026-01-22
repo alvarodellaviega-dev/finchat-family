@@ -15,6 +15,7 @@ import EditExpenseModal from "./components/EditExpenseModal";
 import FiltersModal from "./components/FiltersModal";
 import CategoryModal from "./components/CategoryModal";
 import CategoryDetailsModal from "./components/CategoryDetailsModal";
+import InstallmentModal from "./components/InstallmentModal";
 
 import { useExpenses } from "./hooks/useExpenses";
 import { auth } from "./firebase";
@@ -27,11 +28,7 @@ const MONTHS = [
   "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro",
 ];
 
-export default function Home({
-  goReport,
-  goInstallments,
-  goSettings,
-}) {
+export default function Home({ goReport, goInstallments, goSettings }) {
   const {
     text,
     setText,
@@ -64,7 +61,6 @@ export default function Home({
   const [showFilters, setShowFilters] = useState(false);
   const [showCategories, setShowCategories] = useState(false);
 
-  // 🔑 NOVOS ESTADOS (ESSENCIAIS)
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [showCategoryDetails, setShowCategoryDetails] = useState(false);
 
@@ -76,6 +72,10 @@ export default function Home({
   const [typeFilter, setTypeFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [paymentFilter, setPaymentFilter] = useState("");
+
+  // 💳 PARCELAMENTO
+  const [showInstallments, setShowInstallments] = useState(false);
+  const [installmentData, setInstallmentData] = useState(null);
 
   /* ================= CATEGORIAS ================= */
 
@@ -102,7 +102,6 @@ export default function Home({
   }
 
   function handleSelectCategory(categoryName) {
-    // 🔑 AGORA FUNCIONA
     setSelectedCategory(categoryName);
     setShowCategories(false);
     setShowCategoryDetails(true);
@@ -129,6 +128,45 @@ export default function Home({
 
     return true;
   });
+
+  /* ================= ENVIO ================= */
+
+  function handleSend() {
+    if (!text.trim()) return;
+
+    const lower = text.toLowerCase();
+    const isIncome = ["ganhei", "recebi", "pix", "salario", "salário"]
+      .some(w => lower.includes(w));
+
+    // ✅ ENTRADA
+    if (isIncome) {
+      sendExpense();
+      return;
+    }
+
+    // 🟣 CRÉDITO → SEMPRE MODAL
+    if (paymentMethod === "credit") {
+      const match = text.match(/(\d+([.,]\d+)?)/);
+      if (!match) return;
+
+      const totalValue = Number(match[1].replace(",", "."));
+      const installmentMatch = text.match(/(\d+)\s*x/i);
+      const total = installmentMatch ? Number(installmentMatch[1]) : 1;
+
+      setInstallmentData({
+        total,
+        installmentValue: totalValue / total,
+        startMonth: new Date().getMonth(),
+        startYear: new Date().getFullYear(),
+      });
+
+      setShowInstallments(true);
+      return;
+    }
+
+    // 💼 cash / 💳 debit
+    sendExpense();
+  }
 
   /* ================= RENDER ================= */
 
@@ -157,7 +195,7 @@ export default function Home({
       <InputBar
         text={text}
         setText={setText}
-        onSend={sendExpense}
+        onSend={handleSend}
         onEmoji={() => setEmojiOpen(true)}
         paymentMethod={paymentMethod}
         setPaymentMethod={setPaymentMethod}
@@ -183,7 +221,6 @@ export default function Home({
         onDelete={deleteExpense}
       />
 
-      {/* 🔍 FILTROS */}
       {showFilters && (
         <FiltersModal
           month={filterMonth}
@@ -202,7 +239,6 @@ export default function Home({
         />
       )}
 
-      {/* 🗂️ LISTA DE CATEGORIAS */}
       {showCategories && (
         <CategoryModal
           categories={categories || []}
@@ -216,7 +252,6 @@ export default function Home({
         />
       )}
 
-      {/* 📂 DETALHES DA CATEGORIA */}
       {showCategoryDetails && selectedCategory && (
         <CategoryDetailsModal
           category={selectedCategory}
@@ -226,6 +261,21 @@ export default function Home({
           onClose={() => {
             setShowCategoryDetails(false);
             setSelectedCategory(null);
+          }}
+        />
+      )}
+
+      {/* 💳 MODAL DE PARCELAMENTO */}
+      {showInstallments && installmentData && (
+        <InstallmentModal
+          data={installmentData}
+          cards={cards}
+          selectedCardId={selectedCardId}
+          setSelectedCardId={setSelectedCardId}
+          onCancel={() => setShowInstallments(false)}
+          onConfirm={(installments) => {
+            setShowInstallments(false);
+            sendExpense({ installments });
           }}
         />
       )}
