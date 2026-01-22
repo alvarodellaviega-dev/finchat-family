@@ -12,99 +12,70 @@ export default function ChatBubble({
   return (
     <div
       style={{
-        maxWidth: "75%",
-        padding: "8px 12px",
-        borderRadius: 14,
-        background: isMe ? "#DCF8C6" : "#FFFFFF",
-        alignSelf: isMe ? "flex-end" : "flex-start",
-        borderTopRightRadius: isMe ? 4 : 14,
-        borderTopLeftRadius: isMe ? 14 : 4,
-        position: "relative",
-        boxShadow: "0 1px 1px rgba(0,0,0,0.12)",
-        wordBreak: "break-word",
+        display: "flex",
+        justifyContent: isMe ? "flex-end" : "flex-start",
       }}
     >
-      {/* 😊 EMOJI */}
-      {e.type === "emoji" ? (
-        <div style={{ fontSize: 28 }}>{e.emoji}</div>
-      ) : (
-        <>
-          {/* 🏷️ CATEGORIA */}
-          {e.category && (
-            <div
-              style={{
-                fontSize: 12,
-                opacity: 0.7,
-                marginBottom: 2,
-              }}
-            >
-              {e.category}
-            </div>
-          )}
+      <div
+        style={{
+          maxWidth: "70%",
+          padding: "6px 10px",
+          borderRadius: 12,
+          background: isMe ? "#DCF8C6" : "#fff",
+          borderTopRightRadius: isMe ? 4 : 12,
+          borderTopLeftRadius: isMe ? 12 : 4,
+          boxShadow: "0 1px 1px rgba(0,0,0,0.15)",
+          fontSize: 14,
+          position: "relative",
+        }}
+      >
+        {e.type === "emoji" ? (
+          <div style={{ fontSize: 30 }}>{e.emoji}</div>
+        ) : (
+          <>
+            <div>{e.text}</div>
 
-          {/* 📝 TEXTO */}
-          <div>{e.text}</div>
+            {typeof e.amount === "number" && (
+              <strong style={{ display: "block", marginTop: 2 }}>
+                R$ {Math.abs(e.amount).toFixed(2)}
+              </strong>
+            )}
 
-          {/* 💰 VALOR */}
-          {typeof e.amount === "number" && (
-            <strong>
-              R$ {Math.abs(e.amount).toFixed(2)}
-            </strong>
-          )}
+            {e.installments && (
+              <InstallmentBubble expense={e} />
+            )}
 
-          {/* ⏰ HORA */}
-          {e.createdAt?.toDate && (
-            <div
-              style={{
-                fontSize: 11,
-                color: "#777",
-                textAlign: "right",
-                marginTop: 2,
-              }}
-            >
-              {formatTime(e.createdAt.toDate())}
-            </div>
-          )}
-
-          {/* 💳 CARTÃO */}
-          {(e.paymentMethod === "credit" ||
-            e.paymentMethod === "debit") &&
-            e.cardId && (
+            {e.createdAt?.toDate && (
               <div
                 style={{
-                  fontSize: 12,
-                  opacity: 0.7,
-                  marginTop: 2,
+                  fontSize: 11,
+                  textAlign: "right",
+                  opacity: 0.6,
+                  marginTop: 4,
                 }}
               >
-                💳{" "}
-                {cards.find(c => c.id === e.cardId)?.name ||
-                  "Cartão"}
+                {formatTime(e.createdAt.toDate())}
               </div>
             )}
 
-          {/* 📆 PARCELAMENTO */}
-          {e.installments && (
-            <InstallmentBubble expense={e} />
-          )}
-
-          {/* ✏️ EDITAR */}
-          <button
-            style={{
-              position: "absolute",
-              bottom: 4,
-              right: 6,
-              border: "none",
-              background: "transparent",
-              cursor: "pointer",
-              fontSize: 12,
-            }}
-            onClick={() => setEditExpense(e)}
-          >
-            ✏️
-          </button>
-        </>
-      )}
+            <button
+              onClick={() => setEditExpense(e)}
+              style={{
+                position: "absolute",
+                bottom: 2,
+                right: 4,
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                fontSize: 12,
+                opacity: 0.6,
+              }}
+            >
+              ✏️
+            </button>
+          </>
+        )}
+      </div>
     </div>
   );
 }

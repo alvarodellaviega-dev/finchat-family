@@ -1,84 +1,127 @@
 // src/components/FiltersModal.js
+
 export default function FiltersModal({
   month,
   setMonth,
   year,
   setYear,
   MONTHS,
+
   typeFilter,
   setTypeFilter,
+
+  categoryFilter,
+  setCategoryFilter,
+  categories = [], // ✅ DEFENSIVO
+
+  paymentFilter,
+  setPaymentFilter,
+
   onClose,
 }) {
-
   return (
     <div style={styles.overlay}>
-      <div style={styles.modalCard}>
+      <div style={styles.modal}>
         <h3>🔍 Filtros</h3>
 
-        <div style={styles.filterRow}>
-          <button onClick={() => setMonth((m) => (m + 11) % 12)}>◀</button>
-          <strong>{MONTHS[month]}</strong>
-          <button onClick={() => setMonth((m) => (m + 1) % 12)}>▶</button>
+        {/* PERÍODO */}
+        <div style={styles.block}>
+          <strong>Período</strong>
 
-          <button onClick={() => setYear((y) => y - 1)}>◀</button>
-          <strong>{year}</strong>
-          <button onClick={() => setYear((y) => y + 1)}>▶</button>
-          <div style={{ marginTop: 12 }}>
-  <strong>Tipo</strong>
+          <div style={styles.row}>
+            <button onClick={() => setMonth((m) => (m + 11) % 12)}>◀</button>
+            <span>{MONTHS[month]}</span>
+            <button onClick={() => setMonth((m) => (m + 1) % 12)}>▶</button>
+          </div>
 
-  <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-    <button
-      onClick={() => setTypeFilter("all")}
-      style={{
-        padding: 6,
-        background: typeFilter === "all" ? "#25D366" : "#eee",
-      }}
-    >
-      Todos
-    </button>
-
-    <button
-      onClick={() => setTypeFilter("income")}
-      style={{
-        padding: 6,
-        background: typeFilter === "income" ? "#25D366" : "#eee",
-      }}
-    >
-      Entradas
-    </button>
-
-    <button
-      onClick={() => setTypeFilter("expense")}
-      style={{
-        padding: 6,
-        background: typeFilter === "expense" ? "#25D366" : "#eee",
-      }}
-    >
-      Saídas
-    </button>
-  </div>
-</div>
-
+          <div style={styles.row}>
+            <button onClick={() => setYear((y) => y - 1)}>◀</button>
+            <span>{year}</span>
+            <button onClick={() => setYear((y) => y + 1)}>▶</button>
+          </div>
         </div>
 
-        <button onClick={onClose}>Aplicar filtros</button>
+        {/* TIPO */}
+        <div style={styles.block}>
+          <strong>Tipo</strong>
+          <div style={styles.row}>
+            {["all", "income", "expense"].map((t) => (
+              <button
+                key={t}
+                onClick={() => setTypeFilter(t)}
+                style={{
+                  ...styles.chip,
+                  background: typeFilter === t ? "#25D366" : "#eee",
+                  color: typeFilter === t ? "#fff" : "#000",
+                }}
+              >
+                {t === "all"
+                  ? "Todos"
+                  : t === "income"
+                  ? "Entradas"
+                  : "Saídas"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* CATEGORIA */}
+        <div style={styles.block}>
+          <strong>Categoria</strong>
+          <select
+            value={categoryFilter || ""}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+          >
+            <option value="">Todas</option>
+
+            {categories.length === 0 ? (
+              <option disabled>Sem categorias</option>
+            ) : (
+              categories.map((c) => (
+                <option key={c.id} value={c.name}>
+                  {c.name}
+                </option>
+              ))
+            )}
+          </select>
+        </div>
+
+        {/* PAGAMENTO */}
+        <div style={styles.block}>
+          <strong>Pagamento</strong>
+          <select
+            value={paymentFilter || ""}
+            onChange={(e) => setPaymentFilter(e.target.value)}
+          >
+            <option value="">Todos</option>
+            <option value="cash">Dinheiro</option>
+            <option value="debit">Débito</option>
+            <option value="credit">Crédito</option>
+          </select>
+        </div>
+
+        <button style={styles.apply} onClick={onClose}>
+          Aplicar filtros
+        </button>
       </div>
     </div>
   );
 }
 
-/* ===== styles locais ===== */
+/* ================= STYLES ================= */
+
 const styles = {
   overlay: {
     position: "fixed",
     inset: 0,
-    background: "rgba(0,0,0,0.4)",
+    background: "rgba(0,0,0,0.45)",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     zIndex: 9999,
   },
-  modalCard: {
+
+  modal: {
     background: "#fff",
     padding: 20,
     borderRadius: 12,
@@ -86,12 +129,36 @@ const styles = {
     maxWidth: 420,
     display: "flex",
     flexDirection: "column",
-    gap: 10,
+    gap: 12,
   },
-  filterRow: {
+
+  block: {
     display: "flex",
-    alignItems: "center",
+    flexDirection: "column",
     gap: 6,
-    justifyContent: "center",
+  },
+
+  row: {
+    display: "flex",
+    gap: 8,
+    alignItems: "center",
+  },
+
+  chip: {
+    padding: "6px 10px",
+    borderRadius: 20,
+    border: "none",
+    cursor: "pointer",
+  },
+
+  apply: {
+    marginTop: 10,
+    background: "#25D366",
+    color: "#fff",
+    border: "none",
+    padding: 10,
+    borderRadius: 8,
+    fontSize: 15,
+    cursor: "pointer",
   },
 };

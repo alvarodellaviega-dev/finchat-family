@@ -11,8 +11,10 @@ export default function EditExpenseModal({
   const [amount, setAmount] = useState("");
   const [category, setCategory] = useState("Outros");
 
+  const isEmoji = expense?.type === "emoji";
+
   useEffect(() => {
-    if (!expense) return;
+    if (!expense || isEmoji) return;
 
     setText(expense.text || "");
     setAmount(
@@ -21,12 +23,13 @@ export default function EditExpenseModal({
         : ""
     );
     setCategory(expense.category || "Outros");
-  }, [expense]);
+  }, [expense, isEmoji]);
 
   if (!expense) return null;
 
-  function handleSubmit(e) {
-    e.preventDefault();
+  function handleSave() {
+    if (!text.trim()) return;
+    if (!amount || isNaN(Number(amount))) return;
 
     onSave(expense.id, {
       text: text.trim(),
@@ -36,70 +39,112 @@ export default function EditExpenseModal({
           : Math.abs(Number(amount)),
       category,
     });
+
+    onClose();
+  }
+
+  function handleDelete() {
+    if (
+      !window.confirm(
+        isEmoji
+          ? "Excluir este emoji?"
+          : "Excluir este lançamento?"
+      )
+    )
+      return;
+
+    onDelete(expense.id);
+    onClose();
   }
 
   return (
     <div style={styles.overlay}>
       <div style={styles.modal}>
-        <h3>✏️ Editar lançamento</h3>
+        <h3>
+          {isEmoji
+            ? "🗑️ Excluir emoji"
+            : "✏️ Editar lançamento"}
+        </h3>
 
-        <form onSubmit={handleSubmit}>
-          <input
-            style={styles.input}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            placeholder="Descrição"
-          />
+        {/* EMOJI → SOMENTE EXCLUIR */}
+        {isEmoji ? (
+          <div style={{ marginTop: 12 }}>
+            <p style={{ textAlign: "center", fontSize: 24 }}>
+              {expense.emoji}
+            </p>
 
-          <input
-            style={styles.input}
-            type="number"
-            step="0.01"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            placeholder="Valor"
-          />
+            <div style={styles.actions}>
+              <button
+                style={styles.cancel}
+                onClick={onClose}
+              >
+                Cancelar
+              </button>
 
-          <select
-            style={styles.input}
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-          >
-            <option>Mercado</option>
-            <option>Alimentação</option>
-            <option>Transporte</option>
-            <option>Combustível</option>
-            <option>Saúde</option>
-            <option>Lazer</option>
-            <option>Outros</option>
-          </select>
-
-          <div style={styles.actions}>
-            <button
-              type="button"
-              style={styles.cancel}
-              onClick={onClose}
-            >
-              Cancelar
-            </button>
-
-            <button
-              type="button"
-              style={styles.delete}
-              onClick={() => {
-                if (window.confirm("Excluir este lançamento?")) {
-                  onDelete(expense.id);
-                }
-              }}
-            >
-              Excluir
-            </button>
-
-            <button type="submit" style={styles.save}>
-              Salvar
-            </button>
+              <button
+                style={styles.delete}
+                onClick={handleDelete}
+              >
+                Excluir
+              </button>
+            </div>
           </div>
-        </form>
+        ) : (
+          <>
+            <input
+              style={styles.input}
+              value={text}
+              onChange={e => setText(e.target.value)}
+              placeholder="Descrição"
+            />
+
+            <input
+              style={styles.input}
+              type="number"
+              step="0.01"
+              value={amount}
+              onChange={e => setAmount(e.target.value)}
+              placeholder="Valor"
+            />
+
+            <select
+              style={styles.input}
+              value={category}
+              onChange={e => setCategory(e.target.value)}
+            >
+              <option>Mercado</option>
+              <option>Alimentação</option>
+              <option>Transporte</option>
+              <option>Combustível</option>
+              <option>Saúde</option>
+              <option>Lazer</option>
+              <option>Outros</option>
+            </select>
+
+            <div style={styles.actions}>
+              <button
+                style={styles.cancel}
+                onClick={onClose}
+              >
+                Cancelar
+              </button>
+
+              <button
+                style={styles.delete}
+                onClick={handleDelete}
+              >
+                Excluir
+              </button>
+
+              <button
+                style={styles.save}
+                onClick={handleSave}
+              >
+                Salvar
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

@@ -1,54 +1,86 @@
-// src/components/ChatList.js
-import InstallmentBubble from "./InstallmentBubble";
+import ChatBubble from "./ChatBubble";
+
+function isSameDay(a, b) {
+  return (
+    a.getDate() === b.getDate() &&
+    a.getMonth() === b.getMonth() &&
+    a.getFullYear() === b.getFullYear()
+  );
+}
+
+function formatDateLabel(date) {
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+
+  if (isSameDay(date, today)) return "Hoje";
+  if (isSameDay(date, yesterday)) return "Ontem";
+
+  return date.toLocaleDateString("pt-BR", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  });
+}
+
+function formatTime(date) {
+  return date.toLocaleTimeString("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 export default function ChatList({
   expenses,
   user,
   bottomRef,
-  onEdit, // 🔴 recebe do Home
+  onEdit,
+  cards,
 }) {
+  let lastDate = null;
+
   return (
-    <div style={{ flex: 1, overflowY: "auto", padding: 10 }}>
-      {expenses.map(e => (
-        <div
-          key={e.id}
-          style={{
-            background: e.user === user.email ? "#DCF8C6" : "#fff",
-            padding: 8,
-            borderRadius: 12,
-            marginBottom: 6,
-            maxWidth: "75%",
-            alignSelf: e.user === user.email ? "flex-end" : "flex-start",
-            position: "relative",
-          }}
-        >
-          {e.type === "emoji" ? (
-            <span style={{ fontSize: 28 }}>{e.emoji}</span>
-          ) : (
-            <>
-              <div>{e.text}</div>
-              <strong>R$ {Math.abs(e.amount || 0).toFixed(2)}</strong>
+    <div
+      style={{
+        flex: 1,
+        overflowY: "auto",
+        padding: 10,
+        display: "flex",
+        flexDirection: "column",
+        gap: 6,
+      }}
+    >
+      {expenses.map((e) => {
+        const date = e.createdAt?.toDate?.() || new Date();
+        const showDate = !lastDate || !isSameDay(date, lastDate);
+        if (showDate) lastDate = date;
 
-              {e.installments && <InstallmentBubble expense={e} />}
-
-              {/* ✏️ EDITAR */}
-              <button
+        return (
+          <div key={e.id}>
+            {showDate && (
+              <div
                 style={{
-                  position: "absolute",
-                  bottom: 4,
-                  right: 6,
-                  border: "none",
-                  background: "transparent",
-                  cursor: "pointer",
+                  textAlign: "center",
+                  margin: "12px 0 6px",
+                  fontSize: 12,
+                  color: "#666",
                 }}
-                onClick={() => onEdit(e)}
               >
-                ✏️
-              </button>
-            </>
-          )}
-        </div>
-      ))}
+                {formatDateLabel(date)}
+              </div>
+            )}
+
+            <ChatBubble
+              e={e}
+              user={user}
+              cards={cards}
+              formatTime={formatTime}
+              setEditExpense={onEdit}
+            />
+          </div>
+        );
+      })}
+
       <div ref={bottomRef} />
     </div>
   );

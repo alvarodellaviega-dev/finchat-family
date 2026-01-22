@@ -1,4 +1,3 @@
-// src/hooks/useExpenses.js
 import { useEffect, useState, useRef } from "react";
 import {
   getFirestore,
@@ -17,18 +16,33 @@ import { auth } from "../firebase";
 const db = getFirestore();
 const FAMILY_ID = "finchat-family-main";
 
+/* 🔑 REGRAS */
+const INCOME_WORDS = [
+  "ganhei",
+  "recebi",
+  "achei",
+  "fiz",
+  "salario",
+  "pagamento",
+];
+
+function detectEntryType(text) {
+  const t = text.toLowerCase();
+  return INCOME_WORDS.some((w) => t.includes(w))
+    ? "income"
+    : "expense";
+}
+
 export function useExpenses() {
   const user = auth.currentUser;
   const bottomRef = useRef(null);
 
-  /* ================= STATE ================= */
-
   const [text, setText] = useState("");
   const [expenses, setExpenses] = useState([]);
   const [cards, setCards] = useState([]);
+  const [categories, setCategories] = useState([]);
 
   const [editExpense, setEditExpense] = useState(null);
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
   const [paymentMethod, setPaymentMethod] = useState("cash");
   const [selectedCardId, setSelectedCardId] = useState(null);
@@ -43,11 +57,8 @@ export function useExpenses() {
         collection(db, "families", FAMILY_ID, "expenses"),
         orderBy("createdAt", "asc")
       ),
-      snap => {
-        setExpenses(
-          snap.docs.map(d => ({ id: d.id, ...d.data() }))
-        );
-
+      (snap) => {
+        setExpenses(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
         setTimeout(() => {
           bottomRef.current?.scrollIntoView({ behavior: "smooth" });
         }, 50);
@@ -60,41 +71,71 @@ export function useExpenses() {
 
     return onSnapshot(
       collection(db, "families", FAMILY_ID, "cards"),
-      snap => {
-        setCards(
-          snap.docs.map(d => ({ id: d.id, ...d.data() }))
-        );
-      }
+      (snap) =>
+        setCards(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+    );
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    return onSnapshot(
+      collection(db, "families", FAMILY_ID, "categories"),
+      (snap) =>
+        setCategories(
+          snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+        )
     );
   }, [user]);
 
   /* ================= ACTIONS ================= */
 
+  // ✅ ENVIO DE EMOJI (ESTAVA FALTANDO)
   async function sendEmoji(emoji) {
+    if (!emoji) return;
+
     await addDoc(collection(db, "families", FAMILY_ID, "expenses"), {
       type: "emoji",
       emoji,
-      user: user.email,
+      user: user?.email,
       createdAt: serverTimestamp(),
     });
-    setShowEmojiPicker(false);
   }
 
-  async function sendExpense(e) {
-    e.preventDefault();
+  async function sendExpense({ installments = null } = {}) {
     if (!text.trim()) return;
 
-    const match = text.match(/(\d+([.,]\d+)?)/);
-    if (!match) return;
+    const valueMatch = text.match(/(\d+([.,]\d+)?)/);
+    if (!valueMatch) return;
 
-    const value = Number(match[1].replace(",", "."));
+    const value = Number(valueMatch[1].replace(",", "."));
+    const entryType = detectEntryType(text);
+
+    if (
+      entryType === "expense" &&
+      paymentMethod === "credit" &&
+      !selectedCardId
+    ) {
+      alert("Selecione um cartão");
+      return;
+    }
 
     await addDoc(collection(db, "families", FAMILY_ID, "expenses"), {
       text: text.trim(),
-      amount: -Math.abs(value),
-      paymentMethod,
-      cardId: paymentMethod === "debit" ? selectedCardId : null,
-      user: user.email,
+      amount:
+        entryType === "income"
+          ? Math.abs(value)
+          : -Math.abs(value),
+
+      entryType,
+      paymentMethod: entryType === "expense" ? paymentMethod : null,
+      cardId:
+        paymentMethod === "credit" || paymentMethod === "debit"
+          ? selectedCardId
+          : null,
+
+      installments,
+      user: user?.email,
       createdAt: serverTimestamp(),
     });
 
@@ -104,61 +145,49 @@ export function useExpenses() {
   }
 
   async function updateExpense(id, data) {
-    const ref = doc(
-      db,
-      "families",
-      FAMILY_ID,
-      "expenses",
-      id
+    await updateDoc(
+      doc(db, "families", FAMILY_ID, "expenses", id),
+      { ...data, updatedAt: serverTimestamp() }
     );
-
-    await updateDoc(ref, {
-      ...data,
-      updatedAt: serverTimestamp(),
-    });
-
     setEditExpense(null);
   }
 
   async function deleteExpense(id) {
-    const ref = doc(
-      db,
-      "families",
-      FAMILY_ID,
-      "expenses",
-      id
+    await deleteDoc(
+      doc(db, "families", FAMILY_ID, "expenses", id)
     );
-
-    await deleteDoc(ref);
     setEditExpense(null);
   }
 
   /* ================= BALANCE ================= */
 
   const balance = expenses.reduce((sum, e) => {
+    // ❌ crédito não entra direto no saldo
     if (e.paymentMethod === "credit") return sum;
     return sum + (Number(e.amount) || 0);
   }, 0);
 
-  /* ================= EXPORT ================= */
-
   return {
-    text,
-    setText,
     expenses,
     cards,
+    categories,
     balance,
 
-    editExpense,
-    setEditExpense,
+    text,
+    setText,
+
+    paymentMethod,
+    setPaymentMethod,
+    selectedCardId,
+    setSelectedCardId,
 
     sendExpense,
-    sendEmoji,
+    sendEmoji, // ✅ AGORA EXISTE
     updateExpense,
     deleteExpense,
 
-    showEmojiPicker,
-    setShowEmojiPicker,
+    editExpense,
+    setEditExpense,
 
     bottomRef,
   };
