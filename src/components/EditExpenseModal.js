@@ -1,64 +1,41 @@
 // src/components/EditExpenseModal.js
 import { useState, useEffect } from "react";
-import { doc, updateDoc, deleteDoc } from "firebase/firestore";
-import { getFirestore } from "firebase/firestore";
-
-const db = getFirestore();
 
 export default function EditExpenseModal({
   expense,
-  FAMILY_ID,
-  categories,
   onClose,
+  onSave,
+  onDelete,
 }) {
-  // ✅ Hooks SEMPRE no topo
   const [text, setText] = useState("");
-  const [amount, setAmount] = useState(0);
-  const [category, setCategory] = useState("");
+  const [amount, setAmount] = useState("");
+  const [category, setCategory] = useState("Outros");
 
-  // ✅ Sincroniza quando abrir
   useEffect(() => {
     if (!expense) return;
 
     setText(expense.text || "");
-    setAmount(Math.abs(expense.amount || 0));
-    setCategory(expense.category || "");
+    setAmount(
+      expense.amount != null
+        ? Math.abs(expense.amount).toString()
+        : ""
+    );
+    setCategory(expense.category || "Outros");
   }, [expense]);
 
-  // 🔒 Proteção só DEPOIS dos hooks
   if (!expense) return null;
 
-  async function save() {
-    if (!text.trim()) return;
+  function handleSubmit(e) {
+    e.preventDefault();
 
-    const value =
-      expense.type === "expense"
-        ? -Math.abs(amount)
-        : Math.abs(amount);
-
-    await updateDoc(
-      doc(db, "families", FAMILY_ID, "expenses", expense.id),
-      {
-        text,
-        amount: value,
-        category:
-          expense.type === "expense"
-            ? category || null
-            : null,
-      }
-    );
-
-    onClose();
-  }
-
-  async function remove() {
-    if (!window.confirm("Excluir lançamento?")) return;
-
-    await deleteDoc(
-      doc(db, "families", FAMILY_ID, "expenses", expense.id)
-    );
-
-    onClose();
+    onSave(expense.id, {
+      text: text.trim(),
+      amount:
+        expense.amount < 0
+          ? -Math.abs(Number(amount))
+          : Math.abs(Number(amount)),
+      category,
+    });
   }
 
   return (
@@ -66,46 +43,70 @@ export default function EditExpenseModal({
       <div style={styles.modal}>
         <h3>✏️ Editar lançamento</h3>
 
-        <input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder="Descrição"
-        />
+        <form onSubmit={handleSubmit}>
+          <input
+            style={styles.input}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="Descrição"
+          />
 
-        <input
-          type="number"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-        />
+          <input
+            style={styles.input}
+            type="number"
+            step="0.01"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="Valor"
+          />
 
-        {/* ✅ SELECT DE CATEGORIA — AGORA FUNCIONA */}
-        {expense.type === "expense" && (
           <select
+            style={styles.input}
             value={category}
             onChange={(e) => setCategory(e.target.value)}
           >
-            <option value="">Selecione a categoria</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.name}>
-                {c.name}
-              </option>
-            ))}
+            <option>Mercado</option>
+            <option>Alimentação</option>
+            <option>Transporte</option>
+            <option>Combustível</option>
+            <option>Saúde</option>
+            <option>Lazer</option>
+            <option>Outros</option>
           </select>
-        )}
 
-        <div style={styles.actions}>
-          <button onClick={save}>Salvar</button>
-          <button onClick={remove} style={styles.danger}>
-            Excluir
-          </button>
-          <button onClick={onClose}>Cancelar</button>
-        </div>
+          <div style={styles.actions}>
+            <button
+              type="button"
+              style={styles.cancel}
+              onClick={onClose}
+            >
+              Cancelar
+            </button>
+
+            <button
+              type="button"
+              style={styles.delete}
+              onClick={() => {
+                if (window.confirm("Excluir este lançamento?")) {
+                  onDelete(expense.id);
+                }
+              }}
+            >
+              Excluir
+            </button>
+
+            <button type="submit" style={styles.save}>
+              Salvar
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
 }
 
-/* ===== styles ===== */
+/* ================= STYLES ================= */
+
 const styles = {
   overlay: {
     position: "fixed",
@@ -114,29 +115,46 @@ const styles = {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    zIndex: 9999,
+    zIndex: 999,
   },
   modal: {
     background: "#fff",
-    padding: 20,
+    padding: 16,
     borderRadius: 12,
     width: "90%",
-    maxWidth: 420,
-    display: "flex",
-    flexDirection: "column",
-    gap: 10,
+    maxWidth: 320,
+  },
+  input: {
+    width: "100%",
+    padding: 8,
+    marginBottom: 8,
+    borderRadius: 6,
+    border: "1px solid #ccc",
   },
   actions: {
     display: "flex",
-    gap: 8,
     justifyContent: "flex-end",
+    gap: 8,
+    marginTop: 10,
   },
-  danger: {
-    background: "#e53935",
+  cancel: {
+    background: "#eee",
+    border: "none",
+    padding: "6px 10px",
+    borderRadius: 6,
+  },
+  delete: {
+    background: "#ff5252",
     color: "#fff",
     border: "none",
     padding: "6px 10px",
     borderRadius: 6,
   },
+  save: {
+    background: "#25D366",
+    color: "#fff",
+    border: "none",
+    padding: "6px 12px",
+    borderRadius: 6,
+  },
 };
-
