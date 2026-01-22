@@ -1,5 +1,3 @@
-// src/hooks/useExpenses.js
-
 import { useEffect, useState, useRef } from "react";
 import {
   getFirestore,
@@ -26,6 +24,7 @@ const INCOME_WORDS = [
   "achei",
   "fiz",
   "salario",
+  "salário",
   "pagamento",
   "pix",
 ];
@@ -44,7 +43,7 @@ export function useExpenses() {
   const [text, setText] = useState("");
   const [expenses, setExpenses] = useState([]);
   const [cards, setCards] = useState([]);
-  const [categories, setCategories] = useState([]); // ✅ ESTAVA FALTANDO
+  const [categories, setCategories] = useState([]); // ✅ FIX
   const [editExpense, setEditExpense] = useState(null);
 
   const [paymentMethod, setPaymentMethod] = useState("cash");
@@ -62,10 +61,7 @@ export function useExpenses() {
         orderBy("createdAt", "asc")
       ),
       (snap) => {
-        setExpenses(
-          snap.docs.map((d) => ({ id: d.id, ...d.data() }))
-        );
-
+        setExpenses(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
         setTimeout(() => {
           bottomRef.current?.scrollIntoView({ behavior: "smooth" });
         }, 50);
@@ -80,13 +76,11 @@ export function useExpenses() {
     return onSnapshot(
       collection(db, "families", FAMILY_ID, "cards"),
       (snap) =>
-        setCards(
-          snap.docs.map((d) => ({ id: d.id, ...d.data() }))
-        )
+        setCards(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
     );
   }, [user]);
 
-  // ✅ CATEGORIES (ESTA ERA A FALHA)
+  // ✅ CATEGORIES (ESTAVA FALTANDO)
   useEffect(() => {
     if (!user) return;
 
@@ -96,9 +90,7 @@ export function useExpenses() {
         setCategories(
           snap.docs
             .map((d) => ({ id: d.id, ...d.data() }))
-            .sort((a, b) =>
-              a.name.localeCompare(b.name, "pt-BR")
-            )
+            .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
         )
     );
   }, [user]);
@@ -106,15 +98,12 @@ export function useExpenses() {
   /* ================= ACTIONS ================= */
 
   async function sendEmoji(emoji) {
-    await addDoc(
-      collection(db, "families", FAMILY_ID, "expenses"),
-      {
-        type: "emoji",
-        emoji,
-        user: user.email,
-        createdAt: serverTimestamp(),
-      }
-    );
+    await addDoc(collection(db, "families", FAMILY_ID, "expenses"), {
+      type: "emoji",
+      emoji,
+      user: user.email,
+      createdAt: serverTimestamp(),
+    });
   }
 
   async function sendExpense({ installments = null } = {}) {
@@ -124,24 +113,20 @@ export function useExpenses() {
     if (!match) return;
 
     const value = Number(match[1].replace(",", "."));
-    const income = isIncome(text);
+    const entryType = isIncome(text) ? "income" : "expense";
 
     // ENTRADA
-    if (income) {
-      await addDoc(
-        collection(db, "families", FAMILY_ID, "expenses"),
-        {
-          text: text.trim(),
-          amount: Math.abs(value),
-          entryType: "income",
-          category: null,
-          paymentMethod: null,
-          cardId: null,
-          installments: null,
-          user: user.email,
-          createdAt: serverTimestamp(),
-        }
-      );
+    if (entryType === "income") {
+      await addDoc(collection(db, "families", FAMILY_ID, "expenses"), {
+        text: text.trim(),
+        entryType: "income",
+        amount: Math.abs(value),
+        paymentMethod: null,
+        cardId: null,
+        installments: null,
+        user: user.email,
+        createdAt: serverTimestamp(),
+      });
 
       setText("");
       return;
@@ -154,20 +139,16 @@ export function useExpenses() {
         return;
       }
 
-      await addDoc(
-        collection(db, "families", FAMILY_ID, "expenses"),
-        {
-          text: text.trim(),
-          amount: 0,
-          entryType: "expense",
-          category: "Outros",
-          paymentMethod: "credit",
-          cardId: selectedCardId,
-          installments,
-          user: user.email,
-          createdAt: serverTimestamp(),
-        }
-      );
+      await addDoc(collection(db, "families", FAMILY_ID, "expenses"), {
+        text: text.trim(),
+        entryType: "expense",
+        amount: 0,
+        paymentMethod: "credit",
+        cardId: selectedCardId,
+        installments,
+        user: user.email,
+        createdAt: serverTimestamp(),
+      });
 
       setText("");
       setPaymentMethod("cash");
@@ -175,26 +156,23 @@ export function useExpenses() {
       return;
     }
 
-    // CASH / DÉBITO
+    // DÉBITO
     if (paymentMethod === "debit" && !selectedCardId) {
       alert("Selecione um cartão");
       return;
     }
 
-    await addDoc(
-      collection(db, "families", FAMILY_ID, "expenses"),
-      {
-        text: text.trim(),
-        amount: -Math.abs(value),
-        entryType: "expense",
-        category: "Outros",
-        paymentMethod,
-        cardId: paymentMethod === "debit" ? selectedCardId : null,
-        installments: null,
-        user: user.email,
-        createdAt: serverTimestamp(),
-      }
-    );
+    // CASH / DÉBITO
+    await addDoc(collection(db, "families", FAMILY_ID, "expenses"), {
+      text: text.trim(),
+      entryType: "expense",
+      amount: -Math.abs(value),
+      paymentMethod,
+      cardId: paymentMethod === "debit" ? selectedCardId : null,
+      installments: null,
+      user: user.email,
+      createdAt: serverTimestamp(),
+    });
 
     setText("");
     setPaymentMethod("cash");
@@ -210,9 +188,7 @@ export function useExpenses() {
   }
 
   async function deleteExpense(id) {
-    await deleteDoc(
-      doc(db, "families", FAMILY_ID, "expenses", id)
-    );
+    await deleteDoc(doc(db, "families", FAMILY_ID, "expenses", id));
     setEditExpense(null);
   }
 
@@ -228,7 +204,7 @@ export function useExpenses() {
   return {
     expenses,
     cards,
-    categories, // ✅ AGORA EXISTE DE VERDADE
+    categories, // ✅ AGORA EXISTE
     balance,
 
     text,

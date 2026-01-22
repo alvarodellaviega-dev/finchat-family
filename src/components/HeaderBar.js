@@ -1,6 +1,8 @@
 import { signOut } from "firebase/auth";
 import { auth } from "../firebase";
 
+const APP_VERSION = "v2.0.1";
+
 export default function HeaderBar({
   goReport,
   goInstallments,
@@ -19,8 +21,20 @@ export default function HeaderBar({
         alignItems: "center",
       }}
     >
-      <strong>FinChat Family</strong>
+      {/* 🔰 TÍTULO + VERSÃO */}
+      <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.1 }}>
+        <strong>FinChat Family</strong>
+        <span
+          style={{
+            fontSize: 11,
+            opacity: 0.7,
+          }}
+        >
+          {APP_VERSION}
+        </span>
+      </div>
 
+      {/* 🔘 AÇÕES */}
       <div style={{ display: "flex", gap: 8 }}>
         <button onClick={onFilter} title="Filtros">🔍</button>
         <button onClick={onCategories} title="Categorias">🗂️</button>

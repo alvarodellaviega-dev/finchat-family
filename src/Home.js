@@ -117,8 +117,23 @@ export default function Home({ goReport, goInstallments, goSettings }) {
     if (d.getMonth() !== filterMonth) return false;
     if (d.getFullYear() !== filterYear) return false;
 
-    if (typeFilter === "income" && e.amount < 0) return false;
-    if (typeFilter === "expense" && e.amount > 0) return false;
+ if (
+  typeFilter === "income" &&
+  !(
+    e.entryType === "income" ||
+    (!e.entryType && Number(e.amount) > 0)
+  )
+) return false;
+
+if (
+  typeFilter === "expense" &&
+  !(
+    e.entryType === "expense" ||
+    (!e.entryType && Number(e.amount) < 0)
+  )
+) return false;
+
+
 
     if (categoryFilter && (e.category || "Outros") !== categoryFilter)
       return false;
