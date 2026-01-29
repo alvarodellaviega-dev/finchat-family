@@ -1,7 +1,12 @@
-{
+
+  {
   "name": "finchat-family",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": "20.x"
+  },
+
 
   "dependencies": {
     "@testing-library/dom": "^10.4.1",
