@@ -200,12 +200,13 @@ if (
       </div>
 
       <ChatList
-        expenses={filteredExpenses}
-        user={user}
-        bottomRef={bottomRef}
-        onEdit={setEditExpense}
-        cards={cards}
-      />
+  expenses={filteredExpenses}
+  user={user}
+  bottomRef={bottomRef}
+  setEditExpense={setEditExpense}  // 🔑 isso aqui
+  cards={cards}
+/>
+
 
       <InputBar
         text={text}

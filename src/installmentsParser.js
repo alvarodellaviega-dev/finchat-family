@@ -53,7 +53,9 @@ export function parseInstallment(text) {
   });
 
   // 🔹 Detecta MM/YYYY ou MM-YYYY  ✅ (regex corrigida)
-  const dateMatch = lower.match(/(\d{1,2})[/\-](\d{4})/);
+  const dateMatch = lower.match(/(\d{1,2})[-/](\d{4})/);
+
+
   if (dateMatch) {
     startMonth = Number(dateMatch[1]) - 1;
     startYear = Number(dateMatch[2]);

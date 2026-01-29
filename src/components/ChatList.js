@@ -34,7 +34,7 @@ export default function ChatList({
   expenses,
   user,
   bottomRef,
-  onEdit,
+  setEditExpense,   // 🔑 nome correto
   cards,
 }) {
   let lastDate = null;
@@ -75,7 +75,7 @@ export default function ChatList({
               user={user}
               cards={cards}
               formatTime={formatTime}
-              setEditExpense={onEdit}
+              setEditExpense={setEditExpense}  // 🔥 AGORA FUNCIONA
             />
           </div>
         );
