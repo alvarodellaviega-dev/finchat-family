@@ -1,7 +1,6 @@
 {
-  "buildCommand": "npm run build",
   "framework": "create-react-app",
-  "engines": {
-    "node": "18.x"
-  }
+  "buildCommand": "CI=false GENERATE_SOURCEMAP=false npm run build",
+  "outputDirectory": "build",
+  "installCommand": "npm install"
 }
