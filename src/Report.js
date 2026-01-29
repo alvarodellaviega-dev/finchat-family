@@ -29,10 +29,9 @@ import {
 
 import {
   buildMonthlyReport,
-  buildYearlyReport,
-  MONTHS,
   closeMonth,
 } from "./utils";
+
 
 const db = getFirestore();
 const FAMILY_ID = "finchat-family-main";
@@ -86,11 +85,6 @@ export default function Report({ month, year, goBack }) {
     [expenses, month, year]
   );
 
-  const yearly = useMemo(
-    () => buildYearlyReport(expenses, year),
-    [expenses, year]
-  );
-
   /* 🔒 PROTEÇÃO MOBILE (Safari / iPhone) */
   if (!report) {
     return <p style={{ padding: 20 }}>Carregando relatório…</p>;
@@ -126,9 +120,6 @@ export default function Report({ month, year, goBack }) {
   /* ================= TOOLTIP ================= */
   function CustomTooltip({ active, payload, label }) {
     if (!active || !payload || !payload.length) return null;
-if (!expenses.length) {
-  return <p style={{ padding: 20 }}>Carregando dados…</p>;
-}
 
     return (
       <div style={styles.tooltip}>
